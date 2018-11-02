@@ -1,0 +1,1 @@
+COMPONENT_EMBED_TXTFILES := messaging_internetofthings_ibmcloud_com.pem
