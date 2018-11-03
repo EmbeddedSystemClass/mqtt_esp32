@@ -17,22 +17,18 @@ This example can be executed on any ESP32 board, the only required interface is 
 ```
 make menuconfig
 ```
+* Set serial flash parameters
 
-* Set serial port under Serial Flasher Options.
+* Set MQTT SSL CONF ssid and password for the board to connect to AP.
 
-* Set ssid and password for the board to connect to AP.
-
-Note how to create a PEM certificate for iot.eclipse.org:
-```
-openssl s_client -showcerts -connect iot.eclipse.org:8883 </dev/null 2>/dev/null|openssl x509 -outform PEM >iot_eclipse_org.pem
-```
+* Set MQTT SSL CONF mqtt username/password/server and clientid. In case of token auth, use "use-token-auth" for username and token for password
 
 ### Build and Flash
 
 Build the project and flash it to the board, then run monitor tool to view serial output:
 
 ```
-make -j4 flash monitor
+make -j$((`nproc` -1)) flash monitor
 ```
 
 (To exit the serial monitor, type ``Ctrl-]``.)
