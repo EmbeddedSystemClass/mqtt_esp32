@@ -20,6 +20,8 @@
 #include "esp_log.h"
 #include "mqtt_client.h"
 
+#include "dht.h"
+
 static const char *TAG = "MQTTS_EXAMPLE";
 
 static EventGroupHandle_t wifi_event_group;
@@ -110,18 +112,56 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
     return ESP_OK;
 }
 
-static void mqtt_app_start(void)
+static void mqtt_app_start(esp_mqtt_client_handle_t client)
 {
-    const esp_mqtt_client_config_t mqtt_cfg = {
+    ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
+    esp_mqtt_client_start(client);
+}
+static const dht_sensor_type_t sensor_type = DHT_TYPE_DHT22;
+static const gpio_num_t dht_gpio = 25;
+
+const esp_mqtt_client_config_t mqtt_cfg = {
         .uri = "mqtts://" CONFIG_MQTT_USERNAME ":" CONFIG_MQTT_PASSWORD "@" CONFIG_MQTT_SERVER,
         .event_handle = mqtt_event_handler,
         .cert_pem = (const char *)messaging_internetofthings_ibmcloud_com_pem_start,
         .client_id = CONFIG_MQTT_CLIENT_ID
     };
 
-    ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
-    esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
-    esp_mqtt_client_start(client);
+
+void dht_test(void* pvParameters)
+{
+  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
+    int16_t temperature = 0;
+    int16_t humidity = 0;
+
+    // DHT sensors that come mounted on a PCB generally have
+    // pull-up resistors on the data pin.  It is recommended
+    // to provide an external pull-up resistor otherwise...
+
+    //gpio_set_pull_mode(dht_gpio, GPIO_PULLUP_ONLY);
+
+    while (1)
+    {
+      if (dht_read_data(sensor_type, dht_gpio, &humidity, &temperature) == ESP_OK)
+        {
+          printf("Humidity: %.1f%% Temp: %.1fC\n", humidity / 10., temperature / 10.);
+
+          if(true)//FIXME add check to see if connected
+            {
+              char data[256];
+              memset(data,0,256);
+              sprintf(data, "{\"d\":{\"counter\":%lld}}",esp_timer_get_time());
+              int msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", data,strlen(data), 0, 0);
+              ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
+            }
+        }
+            /* msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", "data", 0, 0, 0); */
+            /* ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id); */
+        else
+            printf("Could not read data from sensor\n");
+
+        vTaskDelay(10000 / portTICK_PERIOD_MS);
+    }
 }
 
 void app_main()
@@ -139,6 +179,9 @@ void app_main()
 
     nvs_flash_init();
     wifi_init();
-    mqtt_app_start();
+    esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
+
+    mqtt_app_start(client);
+    xTaskCreate(dht_test, "dht_test", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
 
 }
