@@ -22,11 +22,25 @@
 
 #include "dht.h"
 
+#include "cJSON.h"
+
 static const char *TAG = "MQTTS_EXAMPLE";
 
 static EventGroupHandle_t wifi_event_group;
 const static int CONNECTED_BIT = BIT0;
 
+static int16_t temperature = 0;
+static int16_t humidity = 0;
+
+
+#define MAX_RELAYS 4
+
+const int ON = 0;
+const int OFF = 1;
+static int relayStatus[MAX_RELAYS];
+static int relayBase = 16;
+
+int relaysNb = 4;    
 
 
 static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
@@ -83,7 +97,8 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
             msg_id = esp_mqtt_client_subscribe(client, "iotdm-1/mgmt/initiate/device/reboot", 0);
-            ESP_LOGI(TAG, "sent subscribe successful, msg_id=%d", msg_id);
+            ESP_LOGI(TAG, "sent subscribe reboot successful, msg_id=%d", msg_id);
+
             break;
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
@@ -104,6 +119,43 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
             ESP_LOGI(TAG, "MQTT_EVENT_DATA");
             printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
             printf("DATA=%.*s\r\n", event->data_len, event->data);
+            if (strncmp(event->topic, "iot-2/cmd/relay/fmt/json", strlen("iot-2/cmd/relay/fmt/json")) == 0) {
+              cJSON * root   = cJSON_Parse(event->data);
+              int id = cJSON_GetObjectItem(root,"id")->valueint; 
+              int value = cJSON_GetObjectItem(root,"value")->valueint; 
+              printf("id: %d\r\n", id);
+              printf("value: %d\r\n", value);
+
+              if (value == relayStatus[id]) {
+                //reversed logic
+                if (value == OFF) {
+                  relayStatus[id] = ON;
+                }
+                if (value == ON) {
+                  relayStatus[id] = OFF;
+                }
+                gpio_set_level(relayBase + id, relayStatus[id]);
+
+
+      char data[256];
+      char relayData[32];
+      memset(data,0,256);
+      strcat(data, "{\"d\":{");
+      for(int i = 0; i < relaysNb; i++) {
+        sprintf(relayData, "\"relay%dState\":%d", i, relayStatus[i] == ON);
+        if (i != (relaysNb-1)) {
+          strcat(relayData, ",");
+        }
+        strcat(data, relayData);
+      }  
+      strcat(data, "}}");
+      int msg_id = esp_mqtt_client_publish(client, "iot-2/evt/relay_status/fmt/json", data,strlen(data), 0, 0);
+      ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
+
+
+
+              }
+            }
             break;
         case MQTT_EVENT_ERROR:
             ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -131,8 +183,6 @@ const esp_mqtt_client_config_t mqtt_cfg = {
 void dht_test(void* pvParameters)
 {
   esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
-    int16_t temperature = 0;
-    int16_t humidity = 0;
 
     // DHT sensors that come mounted on a PCB generally have
     // pull-up resistors on the data pin.  It is recommended
@@ -150,9 +200,9 @@ void dht_test(void* pvParameters)
             {
               char data[256];
               memset(data,0,256);
-              sprintf(data, "{\"d\":{\"counter\":%lld}}",esp_timer_get_time());
+              sprintf(data, "{\"d\":{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f}}",esp_timer_get_time(),humidity / 10., temperature / 10.);
               int msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", data,strlen(data), 0, 0);
-              ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id);
+              ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
             }
         }
             /* msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", "data", 0, 0, 0); */
@@ -160,10 +210,53 @@ void dht_test(void* pvParameters)
         else
             printf("Could not read data from sensor\n");
 
-        vTaskDelay(10000 / portTICK_PERIOD_MS);
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
     }
 }
 
+
+void relays_handler(void* pvParameters)
+{
+  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
+
+  
+
+  for(int i = 0; i < relaysNb; i++) {
+    gpio_set_direction( relayBase + i, GPIO_MODE_OUTPUT );
+    gpio_set_level(relayBase + i, OFF);
+    relayStatus[i] = OFF;
+  }
+
+  int msg_id = esp_mqtt_client_subscribe(client, "iot-2/cmd/relay/fmt/json", 0);
+  while (msg_id == -1) {
+      vTaskDelay(1000 / portTICK_PERIOD_MS);
+      msg_id = esp_mqtt_client_subscribe(client, "iot-2/cmd/relay/fmt/json", 0);
+  }
+  ESP_LOGI(TAG, "sent subscribe relay cmd successful, msg_id=%d", msg_id);
+
+
+  
+  while (1)
+    {
+      char data[256];
+      char relayData[32];
+      memset(data,0,256);
+      strcat(data, "{\"d\":{");
+      for(int i = 0; i < relaysNb; i++) {
+        sprintf(relayData, "\"relay%dState\":%d", i, relayStatus[i] == ON);
+        if (i != (relaysNb-1)) {
+          strcat(relayData, ",");
+        }
+        strcat(data, relayData);
+      }  
+      strcat(data, "}}");
+      int msg_id = esp_mqtt_client_publish(client, "iot-2/evt/relay_status/fmt/json", data,strlen(data), 0, 0);
+      ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
+
+      vTaskDelay(5000 / portTICK_PERIOD_MS);
+    }
+  
+}
 void app_main()
 {
     ESP_LOGI(TAG, "[APP] Startup..");
@@ -180,8 +273,9 @@ void app_main()
     nvs_flash_init();
     wifi_init();
     esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
-
     mqtt_app_start(client);
-    xTaskCreate(dht_test, "dht_test", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+    //xTaskCreate(dht_test, "dht_test", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+
+    xTaskCreate(relays_handler, "relays_handler", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
 
 }
