@@ -189,38 +189,6 @@ void dht_test(void* pvParameters)
     // to provide an external pull-up resistor otherwise...
 
     //gpio_set_pull_mode(dht_gpio, GPIO_PULLUP_ONLY);
-
-    while (1)
-    {
-      if (dht_read_data(sensor_type, dht_gpio, &humidity, &temperature) == ESP_OK)
-        {
-          printf("Humidity: %.1f%% Temp: %.1fC\n", humidity / 10., temperature / 10.);
-
-          if(true)//FIXME add check to see if connected
-            {
-              char data[256];
-              memset(data,0,256);
-              sprintf(data, "{\"d\":{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f}}",esp_timer_get_time(),humidity / 10., temperature / 10.);
-              int msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", data,strlen(data), 0, 0);
-              ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
-            }
-        }
-            /* msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", "data", 0, 0, 0); */
-            /* ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id); */
-        else
-            printf("Could not read data from sensor\n");
-
-        vTaskDelay(5000 / portTICK_PERIOD_MS);
-    }
-}
-
-
-void relays_handler(void* pvParameters)
-{
-  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
-
-  
-
   for(int i = 0; i < relaysNb; i++) {
     gpio_set_direction( relayBase + i, GPIO_MODE_OUTPUT );
     gpio_set_level(relayBase + i, OFF);
@@ -235,9 +203,6 @@ void relays_handler(void* pvParameters)
   ESP_LOGI(TAG, "sent subscribe relay cmd successful, msg_id=%d", msg_id);
 
 
-  
-  while (1)
-    {
       char data[256];
       char relayData[32];
       memset(data,0,256);
@@ -250,13 +215,36 @@ void relays_handler(void* pvParameters)
         strcat(data, relayData);
       }  
       strcat(data, "}}");
-      int msg_id = esp_mqtt_client_publish(client, "iot-2/evt/relay_status/fmt/json", data,strlen(data), 0, 0);
+      msg_id = esp_mqtt_client_publish(client, "iot-2/evt/relay_status/fmt/json", data,strlen(data), 0, 0);
       ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
 
-      vTaskDelay(5000 / portTICK_PERIOD_MS);
+
+
+  while (1)
+    {
+      if (dht_read_data(sensor_type, dht_gpio, &humidity, &temperature) == ESP_OK)
+        {
+          printf("Humidity: %.1f%% Temp: %.1fC\n", humidity / 10., temperature / 10.);
+
+          if(true)//FIXME add check to see if connected
+            {
+              char data[256];
+              memset(data,0,256);
+              sprintf(data, "{\"d\":{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f}}",esp_timer_get_time(),humidity / 10., temperature / 10.);
+              msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", data,strlen(data), 0, 0);
+              ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
+            }
+        }
+            /* msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", "data", 0, 0, 0); */
+            /* ESP_LOGI(TAG, "sent publish successful, msg_id=%d", msg_id); */
+        else
+            printf("Could not read data from sensor\n");
+
+        vTaskDelay(60000 / portTICK_PERIOD_MS);
     }
-  
 }
+
+
 void app_main()
 {
     ESP_LOGI(TAG, "[APP] Startup..");
@@ -274,8 +262,5 @@ void app_main()
     wifi_init();
     esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
     mqtt_app_start(client);
-    //xTaskCreate(dht_test, "dht_test", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
-
-    xTaskCreate(relays_handler, "relays_handler", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
-
+    xTaskCreate(dht_test, "dht_test", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
 }
