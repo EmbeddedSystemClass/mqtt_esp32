@@ -24,6 +24,9 @@
 
 #include "cJSON.h"
 
+#include "esp_http_client.h"
+#include "esp_https_ota.h"
+
 static const char *TAG = "MQTTS_EXAMPLE";
 
 static EventGroupHandle_t wifi_event_group;
@@ -44,6 +47,18 @@ static int relayStatus[MAX_RELAYS];
 static int relayBase = 16;
 int relaysNb = 4;
 
+
+
+void relays_init()
+{
+  for(int i = 0; i < relaysNb; i++) {
+    gpio_set_direction( relayBase + i, GPIO_MODE_OUTPUT );
+    gpio_set_level(relayBase + i, OFF);
+    relayStatus[i] = OFF;
+  }
+
+}
+
 void publish_relay_data(esp_mqtt_client_handle_t client)
 {
   char data[256];
@@ -62,9 +77,6 @@ void publish_relay_data(esp_mqtt_client_handle_t client)
   ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
 
 }
-
-
-static bool should_blink = true;
 
 static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 {
@@ -89,8 +101,6 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
 static void wifi_init(void)
 {
   tcpip_adapter_init();
-  wifi_event_group = xEventGroupCreate();
-  mqtt_event_group = xEventGroupCreate();
   ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL));
   wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
   ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -144,6 +154,74 @@ int handle_relay_cmd(esp_mqtt_event_handle_t event)
   return 0;
 }
 
+esp_err_t _http_event_handler(esp_http_client_event_t *evt)
+{
+    switch(evt->event_id) {
+        case HTTP_EVENT_ERROR:
+            ESP_LOGD(TAG, "HTTP_EVENT_ERROR");
+            break;
+        case HTTP_EVENT_ON_CONNECTED:
+            ESP_LOGD(TAG, "HTTP_EVENT_ON_CONNECTED");
+            break;
+        case HTTP_EVENT_HEADER_SENT:
+            ESP_LOGD(TAG, "HTTP_EVENT_HEADER_SENT");
+            break;
+        case HTTP_EVENT_ON_HEADER:
+            ESP_LOGD(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
+            break;
+        case HTTP_EVENT_ON_DATA:
+            ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
+            break;
+        case HTTP_EVENT_ON_FINISH:
+            ESP_LOGD(TAG, "HTTP_EVENT_ON_FINISH");
+            break;
+        case HTTP_EVENT_DISCONNECTED:
+            ESP_LOGD(TAG, "HTTP_EVENT_DISCONNECTED");
+            break;
+    }
+    return ESP_OK;
+}
+
+
+int handle_ota_update_cmd(esp_mqtt_event_handle_t event)
+{
+  esp_mqtt_client_handle_t client = event->client;
+  if (event->data_len >= 128 )
+    {
+      ESP_LOGI(TAG, "unextected relay cmd payload");
+      return -1;
+    }
+  char tmpBuf[128];
+  memcpy(tmpBuf, event->data, event->data_len);
+  tmpBuf[event->data_len] = 0;
+  cJSON * root   = cJSON_Parse(tmpBuf);
+  char * url = cJSON_GetObjectItem(root,"ota_url")->valuestring;
+  /* int id = cJSON_GetObjectItem(root,"id")->valueint; */
+  /* int value = cJSON_GetObjectItem(root,"value")->valueint; */
+  /* printf("id: %d\r\n", id); */
+  printf("url: %s\r\n", url);
+  static const char *TAG = "simple_ota_example";
+
+  ESP_LOGI(TAG, "Starting OTA example...");
+  extern const uint8_t server_cert_pem_start[] asm("_binary_ca_cert_pem_start");
+  extern const uint8_t server_cert_pem_end[] asm("_binary_ca_cert_pem_end");
+
+  esp_http_client_config_t config = {
+    .url = url,
+    .cert_pem = (char *)server_cert_pem_start,
+    .event_handler = _http_event_handler,
+  };
+  esp_err_t ret = esp_https_ota(&config);
+  if (ret == ESP_OK) {
+    ESP_LOGE(TAG, "Firmware Upgrades Success, will restart in 10 seconds");
+    vTaskDelay(10000 / portTICK_PERIOD_MS);
+    esp_restart();
+  } else {
+    ESP_LOGE(TAG, "Firmware Upgrades Failed");
+  }
+  return true;
+}
+
 static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 {
   esp_mqtt_client_handle_t client = event->client;
@@ -153,8 +231,6 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
   case MQTT_EVENT_CONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
     xEventGroupSetBits(mqtt_event_group, CONNECTED_BIT);
-
-    should_blink = false;
     msg_id = esp_mqtt_client_subscribe(client, "iotdm-1/mgmt/initiate/device/reboot", 0);
     ESP_LOGI(TAG, "sent subscribe reboot successful, msg_id=%d", msg_id);
 
@@ -167,9 +243,13 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
   case MQTT_EVENT_SUBSCRIBED:
     if (! (SUBSCRIBED_BIT & xEventGroupGetBits(mqtt_event_group))) {
         msg_id = esp_mqtt_client_subscribe(client, "iot-2/cmd/relay/fmt/json", 0);
+        ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
+
+        msg_id = esp_mqtt_client_subscribe(client, "iot-2/cmd/ota_update/fmt/json", 0);
+        ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
+
         xEventGroupSetBits(mqtt_event_group, SUBSCRIBED_BIT);
     }
-    ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
     break;
   case MQTT_EVENT_UNSUBSCRIBED:
     ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
@@ -186,7 +266,13 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
           ESP_LOGI(TAG, "cannot handle relay cmd");
         }
     }
-    break;
+
+    if (strncmp(event->topic, "iot-2/cmd/ota_update/fmt/json", strlen("iot-2/cmd/ota_update/fmt/json")) == 0) {
+      if (handle_ota_update_cmd(event)) {
+          ESP_LOGI(TAG, "cannot handle ota_update cmd");
+        }
+    }
+break;
   case MQTT_EVENT_ERROR:
     ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
     break;
@@ -213,20 +299,8 @@ void dht_test(void* pvParameters)
 {
   esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
 
-  // DHT sensors that come mounted on a PCB generally have
-  // pull-up resistors on the data pin.  It is recommended
-  // to provide an external pull-up resistor otherwise...
-
-  //gpio_set_pull_mode(dht_gpio, GPIO_PULLUP_ONLY);
-  for(int i = 0; i < relaysNb; i++) {
-    gpio_set_direction( relayBase + i, GPIO_MODE_OUTPUT );
-    gpio_set_level(relayBase + i, OFF);
-    relayStatus[i] = OFF;
-  }
 
   xEventGroupWaitBits(mqtt_event_group, SUBSCRIBED_BIT, false, true, portMAX_DELAY);
-
-  publish_relay_data(client);
 
   int msg_id;
   while (1)
@@ -266,16 +340,15 @@ void blink_task(void *pvParameter)
   /* Set the GPIO as a push/pull output */
   gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
   while(1) {
-    if (should_blink) {
-      /* Blink off (output low) */
-      gpio_set_level(BLINK_GPIO, 0);
-      vTaskDelay(1000 / portTICK_PERIOD_MS);
-      /* Blink on (output high) */
-      gpio_set_level(BLINK_GPIO, 1);
-      vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
+    xEventGroupWaitBits(mqtt_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+    gpio_set_level(BLINK_GPIO, ON);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
+    gpio_set_level(BLINK_GPIO, OFF);
+    vTaskDelay(500 / portTICK_PERIOD_MS);
   }
 }
+
+
 void app_main()
 {
   ESP_LOGI(TAG, "[APP] Startup..");
@@ -288,12 +361,22 @@ void app_main()
   esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
   esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
   esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
+
+  wifi_event_group = xEventGroupCreate();
+  mqtt_event_group = xEventGroupCreate();
+
+  
   xTaskCreate(blink_task, "blink_task", configMINIMAL_STACK_SIZE, NULL, 5, NULL);
+
+  relays_init();
 
   nvs_flash_init();
   wifi_init();
   esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
   mqtt_app_start(client);
-  xTaskCreate(dht_test, "dht_test", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+  xEventGroupWaitBits(mqtt_event_group, SUBSCRIBED_BIT, false, true, portMAX_DELAY);
+
+  publish_relay_data(client);
+  /* xTaskCreate(dht_test, "dht_test", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL); */
 
 }
