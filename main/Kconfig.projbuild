@@ -36,5 +36,17 @@ config MQTT_CLIENT_ID
     help
         Mqtt client id
 
+config RELAYS_NB
+    int "Number of relays"
+    default 2
+    help
+        Number of relays
+
+config RELAYS_BASE
+    int "Base IO pin of relays"
+    default 16
+    help
+        Base IO pin of relays
+
 
 endmenu

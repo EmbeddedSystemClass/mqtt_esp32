@@ -31,13 +31,12 @@ static const char *TAG = "MQTTS_EXAMPLE";
 
 static EventGroupHandle_t wifi_event_group;
 static EventGroupHandle_t mqtt_event_group;
-static EventGroupHandle_t sensors_event_group;
-
-const static int DHT22 = BIT0;
-
 const static int CONNECTED_BIT = BIT0;
 const static int SUBSCRIBED_BIT = BIT1;
 const static int READY_FOR_REQUEST = BIT2;
+
+static EventGroupHandle_t sensors_event_group;
+const static int DHT22 = BIT0;
 
 static int16_t temperature = 0;
 static int16_t humidity = 0;
@@ -47,12 +46,12 @@ static int16_t humidity = 0;
 
 const int ON = 0;
 const int OFF = 1;
+const int relayBase = CONFIG_RELAYS_BASE;
+const int relaysNb = CONFIG_RELAYS_NB;
 static int relayStatus[MAX_RELAYS];
-static int relayBase = 16;
-int relaysNb = 4;
 
 
-char *SUBSCRIPTIONS[3] =
+const char *SUBSCRIPTIONS[3] =
   {
    "iotdm-1/mgmt/initiate/device/reboot",
    "iot-2/cmd/relay/fmt/json",
@@ -66,7 +65,6 @@ void relays_init()
     gpio_set_level(relayBase + i, OFF);
     relayStatus[i] = OFF;
   }
-
 }
 
 void publish_relay_data(esp_mqtt_client_handle_t client)
