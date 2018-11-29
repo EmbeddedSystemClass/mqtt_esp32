@@ -90,49 +90,6 @@ void publish_relay_data(esp_mqtt_client_handle_t client)
 
 }
 
-static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
-{
-  switch (event->event_id) {
-  case SYSTEM_EVENT_STA_START:
-    esp_wifi_connect();
-    break;
-  case SYSTEM_EVENT_STA_GOT_IP:
-    xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
-
-    break;
-  case SYSTEM_EVENT_STA_DISCONNECTED:
-    esp_wifi_connect();
-    xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
-    break;
-  default:
-    break;
-  }
-  return ESP_OK;
-}
-
-static void wifi_init(void)
-{
-  tcpip_adapter_init();
-  ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL));
-  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-  ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
-  wifi_config_t wifi_config = {
-    .sta = {
-      .ssid = CONFIG_WIFI_SSID,
-      .password = CONFIG_WIFI_PASSWORD,
-    },
-  };
-  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-  ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
-  ESP_LOGI(TAG, "start the WIFI SSID:[%s]", CONFIG_WIFI_SSID);
-  ESP_ERROR_CHECK(esp_wifi_start());
-  ESP_LOGI(TAG, "Waiting for wifi");
-  xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
-}
-
-extern const uint8_t messaging_internetofthings_ibmcloud_com_pem_start[] asm("_binary_messaging_internetofthings_ibmcloud_com_pem_start");
-extern const uint8_t messaging_internetofthings_ibmcloud_com_pem_end[]   asm("_binary_messaging_internetofthings_ibmcloud_com_pem_end");
 
 int handle_relay_cmd(esp_mqtt_event_handle_t event)
 {
@@ -165,6 +122,53 @@ int handle_relay_cmd(esp_mqtt_event_handle_t event)
   }
   return 0;
 }
+
+
+static void wifi_init(void)
+{
+  tcpip_adapter_init();
+  ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL));
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+  ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
+  wifi_config_t wifi_config = {
+    .sta = {
+      .ssid = CONFIG_WIFI_SSID,
+      .password = CONFIG_WIFI_PASSWORD,
+    },
+  };
+  ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+  ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+  ESP_LOGI(TAG, "start the WIFI SSID:[%s]", CONFIG_WIFI_SSID);
+  ESP_ERROR_CHECK(esp_wifi_start());
+  ESP_LOGI(TAG, "Waiting for wifi");
+  xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+}
+
+static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
+{
+  switch (event->event_id) {
+  case SYSTEM_EVENT_STA_START:
+    esp_wifi_connect();
+    break;
+  case SYSTEM_EVENT_STA_GOT_IP:
+    xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
+
+    break;
+  case SYSTEM_EVENT_STA_DISCONNECTED:
+    esp_wifi_connect();
+    xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
+    break;
+  default:
+    break;
+  }
+  return ESP_OK;
+}
+
+
+
+extern const uint8_t messaging_internetofthings_ibmcloud_com_pem_start[] asm("_binary_messaging_internetofthings_ibmcloud_com_pem_start");
+extern const uint8_t messaging_internetofthings_ibmcloud_com_pem_end[]   asm("_binary_messaging_internetofthings_ibmcloud_com_pem_end");
 
 esp_err_t _http_event_handler(esp_http_client_event_t *evt)
 {
@@ -234,6 +238,20 @@ int handle_ota_update_cmd(esp_mqtt_event_handle_t event)
   return true;
 }
 
+void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
+{
+  if (strncmp(event->topic, "iot-2/cmd/relay/fmt/json", strlen("iot-2/cmd/relay/fmt/json")) == 0) {
+    if (handle_relay_cmd(event)) {
+      ESP_LOGI(TAG, "cannot handle relay cmd");
+    }
+  }
+  if (strncmp(event->topic, "iot-2/cmd/ota_update/fmt/json", strlen("iot-2/cmd/ota_update/fmt/json")) == 0) {
+    if (handle_ota_update_cmd(event)) {
+      ESP_LOGI(TAG, "cannot handle ota_update cmd");
+    }
+
+}
+
 static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 {
   esp_mqtt_client_handle_t client = event->client;
@@ -265,16 +283,8 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
     ESP_LOGI(TAG, "MQTT_EVENT_DATA");
     ESP_LOGI(TAG, "TOPIC=%.*s\r\n", event->topic_len, event->topic);
     ESP_LOGI(TAG, "DATA=%.*s\r\n", event->data_len, event->data);
-    if (strncmp(event->topic, "iot-2/cmd/relay/fmt/json", strlen("iot-2/cmd/relay/fmt/json")) == 0) {
-      if (handle_relay_cmd(event)) {
-          ESP_LOGI(TAG, "cannot handle relay cmd");
-        }
-    }
-    if (strncmp(event->topic, "iot-2/cmd/ota_update/fmt/json", strlen("iot-2/cmd/ota_update/fmt/json")) == 0) {
-      if (handle_ota_update_cmd(event)) {
-          ESP_LOGI(TAG, "cannot handle ota_update cmd");
-        }
-    }
+    dispatch_mqtt_event(event);
+  }
     break;
   case MQTT_EVENT_ERROR:
     ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -304,25 +314,18 @@ static void mqtt_subscribe(esp_mqtt_client_handle_t client)
   xEventGroupSetBits(mqtt_event_group, SUBSCRIBED_BIT);
 
 }
-static const dht_sensor_type_t sensor_type = DHT_TYPE_DHT22;
-static const gpio_num_t dht_gpio = 25;
-
-const esp_mqtt_client_config_t mqtt_cfg = {
-  .uri = "mqtts://" CONFIG_MQTT_USERNAME ":" CONFIG_MQTT_PASSWORD "@" CONFIG_MQTT_SERVER,
-  .event_handle = mqtt_event_handler,
-  .cert_pem = (const char *)messaging_internetofthings_ibmcloud_com_pem_start,
-  .client_id = CONFIG_MQTT_CLIENT_ID
-};
 
 void dht_read(void* pvParameters)
 {
+  const dht_sensor_type_t sensor_type = DHT_TYPE_DHT22;
+  const gpio_num_t dht_gpio = 25;
+
   while (1)
     {
       if (dht_read_data(sensor_type, dht_gpio, &humidity, &temperature) == ESP_OK)
         {
           xEventGroupSetBits(sensors_event_group, DHT22);
           ESP_LOGI(TAG, "Humidity: %.1f%% Temp: %.1fC", humidity / 10., temperature / 10.);
-
         }
       else
         {
@@ -384,6 +387,21 @@ void mqtt_publish_sensor_data(void* pvParameters)
   }
 }
 
+esp_mqtt_client_handle_t mqtt_init()
+{
+  const esp_mqtt_client_config_t mqtt_cfg = {
+    .uri = "mqtts://" CONFIG_MQTT_USERNAME ":" CONFIG_MQTT_PASSWORD "@" CONFIG_MQTT_SERVER,
+    .event_handle = mqtt_event_handler,
+    .cert_pem = (const char *)messaging_internetofthings_ibmcloud_com_pem_start,
+    .client_id = CONFIG_MQTT_CLIENT_ID
+  };
+
+  esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
+  mqtt_app_start(client);
+  mqtt_subscribe(client);
+  return client;
+}
+
 void app_main()
 {
   ESP_LOGI(TAG, "[APP] Startup..");
@@ -407,13 +425,14 @@ void app_main()
 
   nvs_flash_init();
   wifi_init();
-  esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
-  mqtt_app_start(client);
-  mqtt_subscribe(client);
+
+  esp_mqtt_client_handle_t client = mqtt_init()
+
 
   publish_relay_data(client);
-  xTaskCreate(dht_read, "dht_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
 
+
+  xTaskCreate(dht_read, "dht_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
   xTaskCreate(mqtt_publish_sensor_data, "mqtt_publish_sensor_data", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
 
   xTaskCreate(mqtt_ota_update, "mqtt_ota_update", configMINIMAL_STACK_SIZE * 3, (void *)client, 7, NULL);
