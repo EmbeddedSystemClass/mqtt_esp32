@@ -31,9 +31,13 @@ static const char *TAG = "MQTTS_EXAMPLE";
 
 static EventGroupHandle_t wifi_event_group;
 static EventGroupHandle_t mqtt_event_group;
+static EventGroupHandle_t sensors_event_group;
+
+const static int DHT22 = BIT0;
 
 const static int CONNECTED_BIT = BIT0;
 const static int SUBSCRIBED_BIT = BIT1;
+const static int READY_FOR_REQUEST = BIT2;
 
 static int16_t temperature = 0;
 static int16_t humidity = 0;
@@ -48,6 +52,12 @@ static int relayBase = 16;
 int relaysNb = 4;
 
 
+char *SUBSCRIPTIONS[3] =
+  {
+   "iotdm-1/mgmt/initiate/device/reboot",
+   "iot-2/cmd/relay/fmt/json",
+   "iot-2/cmd/relay/fmt/json"
+  };
 
 void relays_init()
 {
@@ -61,6 +71,9 @@ void relays_init()
 
 void publish_relay_data(esp_mqtt_client_handle_t client)
 {
+  ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in publish_relay_data");
+  xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
+
   char data[256];
   char relayData[32];
   memset(data,0,256);
@@ -75,6 +88,7 @@ void publish_relay_data(esp_mqtt_client_handle_t client)
   strcat(data, "}}");
   int msg_id = esp_mqtt_client_publish(client, "iot-2/evt/relay_status/fmt/json", data,strlen(data), 0, 0);
   ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
+  xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
 
 }
 
@@ -213,7 +227,7 @@ int handle_ota_update_cmd(esp_mqtt_event_handle_t event)
   };
   esp_err_t ret = esp_https_ota(&config);
   if (ret == ESP_OK) {
-    ESP_LOGE(TAG, "Firmware Upgrades Success, will restart in 10 seconds");
+    ESP_LOGI(TAG, "Firmware Upgrades Success, will restart in 10 seconds");
     vTaskDelay(10000 / portTICK_PERIOD_MS);
     esp_restart();
   } else {
@@ -225,54 +239,45 @@ int handle_ota_update_cmd(esp_mqtt_event_handle_t event)
 static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 {
   esp_mqtt_client_handle_t client = event->client;
-  int msg_id;
   // your_context_t *context = event->context;
   switch (event->event_id) {
   case MQTT_EVENT_CONNECTED:
+    xEventGroupSetBits(mqtt_event_group, CONNECTED_BIT | READY_FOR_REQUEST);
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-    xEventGroupSetBits(mqtt_event_group, CONNECTED_BIT);
-    msg_id = esp_mqtt_client_subscribe(client, "iotdm-1/mgmt/initiate/device/reboot", 0);
-    ESP_LOGI(TAG, "sent subscribe reboot successful, msg_id=%d", msg_id);
 
     break;
   case MQTT_EVENT_DISCONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
-    xEventGroupClearBits(mqtt_event_group, CONNECTED_BIT | SUBSCRIBED_BIT);
+    xEventGroupClearBits(mqtt_event_group, CONNECTED_BIT | SUBSCRIBED_BIT | READY_FOR_REQUEST);
     break;
 
   case MQTT_EVENT_SUBSCRIBED:
-    if (! (SUBSCRIBED_BIT & xEventGroupGetBits(mqtt_event_group))) {
-        msg_id = esp_mqtt_client_subscribe(client, "iot-2/cmd/relay/fmt/json", 0);
-        ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-
-        msg_id = esp_mqtt_client_subscribe(client, "iot-2/cmd/ota_update/fmt/json", 0);
-        ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-
-        xEventGroupSetBits(mqtt_event_group, SUBSCRIBED_BIT);
-    }
+    xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
+    ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
     break;
   case MQTT_EVENT_UNSUBSCRIBED:
+    xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
     ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
     break;
   case MQTT_EVENT_PUBLISHED:
+    xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
     ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
     break;
   case MQTT_EVENT_DATA:
     ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-    printf("TOPIC=%.*s\r\n", event->topic_len, event->topic);
-    printf("DATA=%.*s\r\n", event->data_len, event->data);
+    ESP_LOGI(TAG, "TOPIC=%.*s\r\n", event->topic_len, event->topic);
+    ESP_LOGI(TAG, "DATA=%.*s\r\n", event->data_len, event->data);
     if (strncmp(event->topic, "iot-2/cmd/relay/fmt/json", strlen("iot-2/cmd/relay/fmt/json")) == 0) {
       if (handle_relay_cmd(event)) {
           ESP_LOGI(TAG, "cannot handle relay cmd");
         }
     }
-
     if (strncmp(event->topic, "iot-2/cmd/ota_update/fmt/json", strlen("iot-2/cmd/ota_update/fmt/json")) == 0) {
       if (handle_ota_update_cmd(event)) {
           ESP_LOGI(TAG, "cannot handle ota_update cmd");
         }
     }
-break;
+    break;
   case MQTT_EVENT_ERROR:
     ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
     break;
@@ -284,6 +289,22 @@ static void mqtt_app_start(esp_mqtt_client_handle_t client)
 {
   ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
   esp_mqtt_client_start(client);
+  ESP_LOGI(TAG, "Waiting for mqtt");
+  xEventGroupWaitBits(mqtt_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+}
+
+static void mqtt_subscribe(esp_mqtt_client_handle_t client)
+{
+  int msg_id;
+
+  for (int i = 0; i < 3; i++) {
+    ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in mqtt_subscribe");
+    xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
+    msg_id = esp_mqtt_client_subscribe(client, SUBSCRIPTIONS[i], 0);
+    ESP_LOGI(TAG, "sent subscribe %s successful, msg_id=%d", SUBSCRIPTIONS[i], msg_id);
+  }
+  xEventGroupSetBits(mqtt_event_group, SUBSCRIBED_BIT);
+
 }
 static const dht_sensor_type_t sensor_type = DHT_TYPE_DHT22;
 static const gpio_num_t dht_gpio = 25;
@@ -295,32 +316,20 @@ const esp_mqtt_client_config_t mqtt_cfg = {
   .client_id = CONFIG_MQTT_CLIENT_ID
 };
 
-void dht_test(void* pvParameters)
+void dht_read(void* pvParameters)
 {
-  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
-
-
-  xEventGroupWaitBits(mqtt_event_group, SUBSCRIBED_BIT, false, true, portMAX_DELAY);
-
-  int msg_id;
   while (1)
     {
       if (dht_read_data(sensor_type, dht_gpio, &humidity, &temperature) == ESP_OK)
         {
-          printf("Humidity: %.1f%% Temp: %.1fC\n", humidity / 10., temperature / 10.);
+          xEventGroupSetBits(sensors_event_group, DHT22);
+          ESP_LOGI(TAG, "Humidity: %.1f%% Temp: %.1fC", humidity / 10., temperature / 10.);
 
-          if(true)//FIXME add check to see if connected
-            {
-              char data[256];
-              memset(data,0,256);
-              sprintf(data, "{\"d\":{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f}}",esp_timer_get_time(),humidity / 10., temperature / 10.);
-              msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", data,strlen(data), 0, 0);
-              ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
-            }
         }
       else
-        printf("Could not read data from sensor\n");
-
+        {
+          ESP_LOGE(TAG, "Could not read data from sensor\n");
+        }
       vTaskDelay(60000 / portTICK_PERIOD_MS);
     }
 }
@@ -348,6 +357,34 @@ void blink_task(void *pvParameter)
   }
 }
 
+void mqtt_ota_update(void* pvParameters)
+{
+  ESP_LOGI(TAG, "starting mqtt_ota_update task");
+  while(1) {
+    vTaskDelay(10000 / portTICK_PERIOD_MS);
+  }
+}
+
+
+void mqtt_publish_sensor_data(void* pvParameters)
+{
+  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
+  ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
+  int msg_id;
+  while(1) {
+    ESP_LOGI(TAG, "waiting DHT22 in mqtt_publish_sensor_data");
+    xEventGroupWaitBits(sensors_event_group, DHT22, true, true, portMAX_DELAY);
+    ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in mqtt_publish_sensor_data");
+    xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
+    char data[256];
+    memset(data,0,256);
+    sprintf(data, "{\"d\":{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f}}",esp_timer_get_time(),humidity / 10., temperature / 10.);
+    msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", data,strlen(data), 0, 0);
+    ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
+    xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
+
+  }
+}
 
 void app_main()
 {
@@ -364,9 +401,9 @@ void app_main()
 
   wifi_event_group = xEventGroupCreate();
   mqtt_event_group = xEventGroupCreate();
+  sensors_event_group = xEventGroupCreate();
 
-  
-  xTaskCreate(blink_task, "blink_task", configMINIMAL_STACK_SIZE, NULL, 5, NULL);
+  xTaskCreate(blink_task, "blink_task", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
 
   relays_init();
 
@@ -374,9 +411,13 @@ void app_main()
   wifi_init();
   esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
   mqtt_app_start(client);
-  xEventGroupWaitBits(mqtt_event_group, SUBSCRIBED_BIT, false, true, portMAX_DELAY);
+  mqtt_subscribe(client);
 
   publish_relay_data(client);
-  /* xTaskCreate(dht_test, "dht_test", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL); */
+  xTaskCreate(dht_read, "dht_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
+
+  xTaskCreate(mqtt_publish_sensor_data, "mqtt_publish_sensor_data", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+
+  xTaskCreate(mqtt_ota_update, "mqtt_ota_update", configMINIMAL_STACK_SIZE * 3, (void *)client, 7, NULL);
 
 }
