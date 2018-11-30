@@ -53,9 +53,9 @@ static int relayStatus[MAX_RELAYS];
 
 const char *SUBSCRIPTIONS[3] =
   {
-   "iotdm-1/mgmt/initiate/device/reboot",
-   "iot-2/cmd/relay/fmt/json",
-   "iot-2/cmd/relay/fmt/json"
+    "iotdm-1/mgmt/initiate/device/reboot",
+    "iot-2/cmd/relay/fmt/json",
+    "iot-2/cmd/relay/fmt/json"
   };
 
 void relays_init()
@@ -172,30 +172,30 @@ extern const uint8_t messaging_internetofthings_ibmcloud_com_pem_end[]   asm("_b
 
 esp_err_t _http_event_handler(esp_http_client_event_t *evt)
 {
-    switch(evt->event_id) {
-        case HTTP_EVENT_ERROR:
-            ESP_LOGD(TAG, "HTTP_EVENT_ERROR");
-            break;
-        case HTTP_EVENT_ON_CONNECTED:
-            ESP_LOGD(TAG, "HTTP_EVENT_ON_CONNECTED");
-            break;
-        case HTTP_EVENT_HEADER_SENT:
-            ESP_LOGD(TAG, "HTTP_EVENT_HEADER_SENT");
-            break;
-        case HTTP_EVENT_ON_HEADER:
-            ESP_LOGD(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
-            break;
-        case HTTP_EVENT_ON_DATA:
-            ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
-            break;
-        case HTTP_EVENT_ON_FINISH:
-            ESP_LOGD(TAG, "HTTP_EVENT_ON_FINISH");
-            break;
-        case HTTP_EVENT_DISCONNECTED:
-            ESP_LOGD(TAG, "HTTP_EVENT_DISCONNECTED");
-            break;
-    }
-    return ESP_OK;
+  switch(evt->event_id) {
+  case HTTP_EVENT_ERROR:
+    ESP_LOGD(TAG, "HTTP_EVENT_ERROR");
+    break;
+  case HTTP_EVENT_ON_CONNECTED:
+    ESP_LOGD(TAG, "HTTP_EVENT_ON_CONNECTED");
+    break;
+  case HTTP_EVENT_HEADER_SENT:
+    ESP_LOGD(TAG, "HTTP_EVENT_HEADER_SENT");
+    break;
+  case HTTP_EVENT_ON_HEADER:
+    ESP_LOGD(TAG, "HTTP_EVENT_ON_HEADER, key=%s, value=%s", evt->header_key, evt->header_value);
+    break;
+  case HTTP_EVENT_ON_DATA:
+    ESP_LOGD(TAG, "HTTP_EVENT_ON_DATA, len=%d", evt->data_len);
+    break;
+  case HTTP_EVENT_ON_FINISH:
+    ESP_LOGD(TAG, "HTTP_EVENT_ON_FINISH");
+    break;
+  case HTTP_EVENT_DISCONNECTED:
+    ESP_LOGD(TAG, "HTTP_EVENT_DISCONNECTED");
+    break;
+  }
+  return ESP_OK;
 }
 
 
@@ -250,41 +250,41 @@ void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
       ESP_LOGI(TAG, "cannot handle ota_update cmd");
     }
 
-}
-
-static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
-{
-  esp_mqtt_client_handle_t client = event->client;
-  // your_context_t *context = event->context;
-  switch (event->event_id) {
-  case MQTT_EVENT_CONNECTED:
-    xEventGroupSetBits(mqtt_event_group, CONNECTED_BIT | READY_FOR_REQUEST);
-    ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-
-    break;
-  case MQTT_EVENT_DISCONNECTED:
-    ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
-    xEventGroupClearBits(mqtt_event_group, CONNECTED_BIT | SUBSCRIBED_BIT | READY_FOR_REQUEST);
-    break;
-
-  case MQTT_EVENT_SUBSCRIBED:
-    xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
-    ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
-    break;
-  case MQTT_EVENT_UNSUBSCRIBED:
-    xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
-    ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
-    break;
-  case MQTT_EVENT_PUBLISHED:
-    xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
-    ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
-    break;
-  case MQTT_EVENT_DATA:
-    ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-    ESP_LOGI(TAG, "TOPIC=%.*s\r\n", event->topic_len, event->topic);
-    ESP_LOGI(TAG, "DATA=%.*s\r\n", event->data_len, event->data);
-    dispatch_mqtt_event(event);
   }
+
+  static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
+  {
+    esp_mqtt_client_handle_t client = event->client;
+    // your_context_t *context = event->context;
+    switch (event->event_id) {
+    case MQTT_EVENT_CONNECTED:
+      xEventGroupSetBits(mqtt_event_group, CONNECTED_BIT | READY_FOR_REQUEST);
+      ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+
+      break;
+    case MQTT_EVENT_DISCONNECTED:
+      ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+      xEventGroupClearBits(mqtt_event_group, CONNECTED_BIT | SUBSCRIBED_BIT | READY_FOR_REQUEST);
+      break;
+
+    case MQTT_EVENT_SUBSCRIBED:
+      xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
+      ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
+      break;
+    case MQTT_EVENT_UNSUBSCRIBED:
+      xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
+      ESP_LOGI(TAG, "MQTT_EVENT_UNSUBSCRIBED, msg_id=%d", event->msg_id);
+      break;
+    case MQTT_EVENT_PUBLISHED:
+      xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
+      ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
+      break;
+    case MQTT_EVENT_DATA:
+      ESP_LOGI(TAG, "MQTT_EVENT_DATA");
+      ESP_LOGI(TAG, "TOPIC=%.*s\r\n", event->topic_len, event->topic);
+      ESP_LOGI(TAG, "DATA=%.*s\r\n", event->data_len, event->data);
+      dispatch_mqtt_event(event);
+    }
     break;
   case MQTT_EVENT_ERROR:
     ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -429,7 +429,7 @@ void app_main()
   esp_mqtt_client_handle_t client = mqtt_init()
 
 
-  publish_relay_data(client);
+    publish_relay_data(client);
 
 
   xTaskCreate(dht_read, "dht_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
