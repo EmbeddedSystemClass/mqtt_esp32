@@ -33,8 +33,11 @@ const int READY_FOR_REQUEST = BIT2;
 
 EventGroupHandle_t sensors_event_group;
 const int DHT22 = BIT0;
+const int DS = BIT1;
 
 QueueHandle_t xQueue;
+
+float wtemperature = 0;
 
 int16_t temperature = 0;
 int16_t humidity = 0;
@@ -69,13 +72,13 @@ void mqtt_publish_sensor_data(void* pvParameters)
   ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
   int msg_id;
   while(1) {
-    ESP_LOGI(TAG, "waiting DHT22 in mqtt_publish_sensor_data");
-    xEventGroupWaitBits(sensors_event_group, DHT22, true, true, portMAX_DELAY);
+    ESP_LOGI(TAG, "waiting DHT22 | DS in mqtt_publish_sensor_data");
+    xEventGroupWaitBits(sensors_event_group, DHT22 | DS, true, true, portMAX_DELAY);
     ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in mqtt_publish_sensor_data");
     xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
     char data[256];
     memset(data,0,256);
-    sprintf(data, "{\"d\":{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f}}",esp_timer_get_time(),humidity / 10., temperature / 10.);
+    sprintf(data, "{\"d\":{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f, \"wtemperature\":%.1f}}",esp_timer_get_time(),humidity / 10., temperature / 10., wtemperature);
     msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", data,strlen(data), 0, 0);
     ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
     xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
@@ -97,7 +100,7 @@ void app_main()
   esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
 
   relays_init();
-  
+
   mqtt_event_group = xEventGroupCreate();
   sensors_event_group = xEventGroupCreate();
   wifi_event_group = xEventGroupCreate();

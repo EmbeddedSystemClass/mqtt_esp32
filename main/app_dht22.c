@@ -7,11 +7,14 @@
 #include "dht.h"
 
 #include "app_dht22.h"
-
+#include "ds18b20.h"
 
 
 extern EventGroupHandle_t sensors_event_group;
 extern const int DHT22;
+extern const int DS;
+
+extern float wtemperature;
 
 extern int16_t temperature;
 extern int16_t humidity;
@@ -22,6 +25,9 @@ void dht_read(void* pvParameters)
 {
   const dht_sensor_type_t sensor_type = DHT_TYPE_DHT22;
   const gpio_num_t dht_gpio = 25;
+
+  const gpio_num_t DS_PIN = 26;
+  ds18b20_init(DS_PIN);
 
   while (1)
     {
@@ -34,6 +40,11 @@ void dht_read(void* pvParameters)
         {
           ESP_LOGE(TAG, "Could not read data from sensor\n");
         }
+      wtemperature = ds18b20_get_temp();
+      if (-55. < wtemperature && wtemperature < 125. ) {
+        xEventGroupSetBits(sensors_event_group, DS);
+      }
+      ESP_LOGI(TAG, "Water temp: %.1fC", wtemperature);
       vTaskDelay(60000 / portTICK_PERIOD_MS);
     }
 }
