@@ -5,9 +5,9 @@
 #include "freertos/event_groups.h"
 
 #include "dht.h"
-
-#include "app_dht22.h"
 #include "ds18b20.h"
+
+#include "app_sensors.h"
 
 
 extern EventGroupHandle_t sensors_event_group;
@@ -21,7 +21,7 @@ extern int16_t humidity;
 
 static const char *TAG = "MQTTS_DHT22";
 
-void dht_read(void* pvParameters)
+void sensors_read(void* pvParameters)
 {
   const dht_sensor_type_t sensor_type = DHT_TYPE_DHT22;
   const gpio_num_t dht_gpio = 25;

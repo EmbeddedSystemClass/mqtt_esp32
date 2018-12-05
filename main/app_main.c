@@ -20,7 +20,7 @@
 #include "app_esp32.h"
 #include "app_relay.h"
 #include "app_wifi.h"
-#include "app_dht22.h"
+#include "app_sensors.h"
 #include "app_mqtt.h"
 
 static const char *TAG = "MQTTS_MAIN";
@@ -115,8 +115,7 @@ void app_main()
   publish_relay_data(client);
 
 
-  xTaskCreate(dht_read, "dht_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
+  xTaskCreate(sensors_read, "sensors_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
   xTaskCreate(mqtt_publish_sensor_data, "mqtt_publish_sensor_data", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
-
 
 }
