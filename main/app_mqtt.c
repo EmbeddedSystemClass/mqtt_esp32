@@ -19,18 +19,17 @@ extern QueueHandle_t xQueue;
 
 static const char *TAG = "MQTTS_MQTTS";
 
-
-extern const uint8_t messaging_internetofthings_ibmcloud_com_pem_start[] asm("_binary_messaging_internetofthings_ibmcloud_com_pem_start");
-extern const uint8_t messaging_internetofthings_ibmcloud_com_pem_end[]   asm("_binary_messaging_internetofthings_ibmcloud_com_pem_end");
+extern const uint8_t mqtt_iot_cipex_ro_pem_start[] asm("_binary_mqtt_iot_cipex_ro_pem_start");
 
 void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
 {
-  if (strncmp(event->topic, "iot-2/cmd/relay/fmt/json", strlen("iot-2/cmd/relay/fmt/json")) == 0) {
+
+  if (strncmp(event->topic, RELAY_TOPIC, strlen(RELAY_TOPIC)) == 0) {
     if (handle_relay_cmd(event)) {
       ESP_LOGI(TAG, "cannot handle relay cmd");
     }
   }
-  if (strncmp(event->topic, "iot-2/cmd/ota/fmt/json", strlen("iot-2/cmd/ota_update/fmt/json")) == 0) {
+  if (strncmp(event->topic, OTA_TOPIC, strlen(OTA_TOPIC)) == 0) {
     if (handle_ota_update_cmd(event)) {
       ESP_LOGI(TAG, "cannot handle ota_update cmd");
     }
@@ -98,8 +97,10 @@ esp_mqtt_client_handle_t mqtt_init()
   const esp_mqtt_client_config_t mqtt_cfg = {
     .uri = "mqtts://" CONFIG_MQTT_USERNAME ":" CONFIG_MQTT_PASSWORD "@" CONFIG_MQTT_SERVER,
     .event_handle = mqtt_event_handler,
-    .cert_pem = (const char *)messaging_internetofthings_ibmcloud_com_pem_start,
-    .client_id = CONFIG_MQTT_CLIENT_ID
+    .cert_pem = (const char *)mqtt_iot_cipex_ro_pem_start,
+    .client_id = CONFIG_MQTT_CLIENT_ID,
+    .lwt_topic = CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/evt/disconnected",
+    .keepalive = 60
   };
 
   esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
@@ -110,5 +111,6 @@ esp_mqtt_client_handle_t mqtt_init()
   ESP_LOGI(TAG, "Waiting for mqtt");
   xEventGroupWaitBits(mqtt_event_group, SUBSCRIBED_BIT, false, true, portMAX_DELAY);
 
+  ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in mqtt_init");
   return client;
 }

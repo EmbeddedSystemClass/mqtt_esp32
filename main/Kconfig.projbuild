@@ -36,6 +36,12 @@ config MQTT_CLIENT_ID
     help
         Mqtt client id
 
+config MQTT_DEVICE_TYPE
+    string "Mqtt device type"
+    default "mqtt_device_type"
+    help
+        Mqtt device type(esp32/esp8266/rtc.)
+
 config RELAYS_NB
     int "Number of relays"
     default 2
