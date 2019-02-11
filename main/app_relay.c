@@ -39,7 +39,7 @@ void publish_relay_data(esp_mqtt_client_handle_t client)
   char data[256];
   char relayData[32];
   memset(data,0,256);
-  strcat(data, "{\"d\":{");
+  strcat(data, "{");
   for(int i = 0; i < relaysNb; i++) {
     sprintf(relayData, "\"relay%dState\":%d", i, relayStatus[i] == ON);
     if (i != (relaysNb-1)) {
@@ -47,7 +47,7 @@ void publish_relay_data(esp_mqtt_client_handle_t client)
     }
     strcat(data, relayData);
   }
-  strcat(data, "}}");
+  strcat(data, "}");
   int msg_id = esp_mqtt_client_publish(client, relays_topic, data,strlen(data), 0, 0);
   ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
   xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
