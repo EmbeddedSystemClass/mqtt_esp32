@@ -16,11 +16,10 @@ extern const int READY_FOR_REQUEST;
 extern QueueHandle_t xQueue;
 
 
-static const char *SUBSCRIPTIONS[3] =
+const char *SUBSCRIPTIONS[MAX_SUB] =
   {
-    "iotdm-1/mgmt/initiate/device/reboot",
-    "iot-2/cmd/relay/fmt/json",
-    "iot-2/cmd/ota/fmt/json"
+    RELAY_TOPIC,
+    OTA_TOPIC
   };
 
 
@@ -30,7 +29,7 @@ static void mqtt_subscribe(esp_mqtt_client_handle_t client)
 {
   int msg_id;
 
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < MAX_SUB; i++) {
     ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in mqtt_subscribe");
     xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
     msg_id = esp_mqtt_client_subscribe(client, SUBSCRIPTIONS[i], 0);

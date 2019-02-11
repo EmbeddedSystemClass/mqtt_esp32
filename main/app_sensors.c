@@ -24,13 +24,13 @@ static const char *TAG = "MQTTS_DHT22";
 void sensors_read(void* pvParameters)
 {
   const dht_sensor_type_t sensor_type = DHT_TYPE_DHT22;
-  const gpio_num_t dht_gpio = 25;
-
-  const gpio_num_t DS_PIN = 26;
+  const gpio_num_t dht_gpio = 18;
+  const gpio_num_t DS_PIN = 19;
   ds18b20_init(DS_PIN);
 
   while (1)
     {
+      //FIXME bug when no sensor
       if (dht_read_data(sensor_type, dht_gpio, &humidity, &temperature) == ESP_OK)
         {
           xEventGroupSetBits(sensors_event_group, DHT22);
@@ -40,6 +40,7 @@ void sensors_read(void* pvParameters)
         {
           ESP_LOGE(TAG, "Could not read data from sensor\n");
         }
+      //END FIXME
       wtemperature = ds18b20_get_temp();
       if (-55. < wtemperature && wtemperature < 125. ) {
         xEventGroupSetBits(sensors_event_group, DS);

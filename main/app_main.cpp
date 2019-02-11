@@ -11,29 +11,28 @@
 #include "freertos/queue.h"
 #include "freertos/event_groups.h"
 
-#include "lwip/sockets.h"
-#include "lwip/dns.h"
-#include "lwip/netdb.h"
-
 #include "esp_log.h"
-
+extern "C" {
 #include "app_esp32.h"
 #include "app_relay.h"
 #include "app_wifi.h"
 #include "app_sensors.h"
 #include "app_mqtt.h"
+}
+
+#include "app_tft.h"
 
 static const char *TAG = "MQTTS_MAIN";
 
 EventGroupHandle_t wifi_event_group;
 EventGroupHandle_t mqtt_event_group;
-const int CONNECTED_BIT = BIT0;
-const int SUBSCRIBED_BIT = BIT1;
-const int READY_FOR_REQUEST = BIT2;
+extern "C" const int CONNECTED_BIT = BIT0;
+extern "C" const int SUBSCRIBED_BIT = BIT1;
+extern "C" const int READY_FOR_REQUEST = BIT2;
 
 EventGroupHandle_t sensors_event_group;
-const int DHT22 = BIT0;
-const int DS = BIT1;
+extern "C" const int DHT22 = BIT0;
+extern "C" const int DS = BIT1;
 
 QueueHandle_t xQueue;
 
@@ -43,7 +42,7 @@ int16_t temperature = 0;
 int16_t humidity = 0;
 
 
-#define BLINK_GPIO 27
+#define BLINK_GPIO GPIO_NUM_27
 void blink_task(void *pvParameter)
 {
   /* Configure the IOMUX register for pad BLINK_GPIO (some pads are
@@ -68,6 +67,7 @@ void blink_task(void *pvParameter)
 
 void mqtt_publish_sensor_data(void* pvParameters)
 {
+  const char * sensors_topic = CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/evt/sensors";
   esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
   ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
   int msg_id;
@@ -78,15 +78,15 @@ void mqtt_publish_sensor_data(void* pvParameters)
     xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
     char data[256];
     memset(data,0,256);
-    sprintf(data, "{\"d\":{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f, \"wtemperature\":%.1f}}",esp_timer_get_time(),humidity / 10., temperature / 10., wtemperature);
-    msg_id = esp_mqtt_client_publish(client, "iot-2/evt/status/fmt/json", data,strlen(data), 0, 0);
+    sprintf(data, "{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f, \"wtemperature\":%.1f}",esp_timer_get_time(),humidity / 10., temperature / 10., wtemperature);
+    msg_id = esp_mqtt_client_publish(client, sensors_topic, data,strlen(data), 0, 0);
     ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
     xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
   }
 }
 
 
-void app_main()
+extern "C" void app_main()
 {
   ESP_LOGI(TAG, "[APP] Startup..");
   ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
@@ -118,4 +118,6 @@ void app_main()
   xTaskCreate(sensors_read, "sensors_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
   xTaskCreate(mqtt_publish_sensor_data, "mqtt_publish_sensor_data", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
 
+
+  xTaskCreate(tft_handler, "tft_handler", configMINIMAL_STACK_SIZE * 3, NULL, 7, NULL);
 }

@@ -31,13 +31,15 @@ void relays_init()
 
 void publish_relay_data(esp_mqtt_client_handle_t client)
 {
+
+  const char * relays_topic = CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/evt/relays";
   ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in publish_relay_data");
   xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
 
   char data[256];
   char relayData[32];
   memset(data,0,256);
-  strcat(data, "{\"d\":{");
+  strcat(data, "{");
   for(int i = 0; i < relaysNb; i++) {
     sprintf(relayData, "\"relay%dState\":%d", i, relayStatus[i] == ON);
     if (i != (relaysNb-1)) {
@@ -45,8 +47,8 @@ void publish_relay_data(esp_mqtt_client_handle_t client)
     }
     strcat(data, relayData);
   }
-  strcat(data, "}}");
-  int msg_id = esp_mqtt_client_publish(client, "iot-2/evt/relay_status/fmt/json", data,strlen(data), 0, 0);
+  strcat(data, "}");
+  int msg_id = esp_mqtt_client_publish(client, relays_topic, data,strlen(data), 0, 0);
   ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
   xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
 

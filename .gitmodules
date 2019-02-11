@@ -1,0 +1,9 @@
+[submodule "components/Adafruit_TouchScreen"]
+	path = components/Adafruit_TouchScreen
+	url = https://github.com/adafruit/Adafruit_TouchScreen
+[submodule "components/arduino-esp32"]
+	path = components/arduino-esp32
+	url = https://github.com/espressif/arduino-esp32.git
+[submodule "components/TFT_eSPI"]
+	path = components/TFT_eSPI
+	url = https://github.com/Bodmer/TFT_eSPI
