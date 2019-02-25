@@ -20,7 +20,7 @@ extern "C" {
 #include "app_mqtt.h"
 }
 
-#include "app_tft.h"
+//#include "app_tft.h"
 
 static const char *TAG = "MQTTS_MAIN";
 
@@ -119,5 +119,5 @@ extern "C" void app_main()
   xTaskCreate(mqtt_publish_sensor_data, "mqtt_publish_sensor_data", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
 
 
-  xTaskCreate(tft_handler, "tft_handler", configMINIMAL_STACK_SIZE * 3, NULL, 7, NULL);
+  //xTaskCreate(tft_handler, "tft_handler", configMINIMAL_STACK_SIZE * 3, NULL, 7, NULL);
 }

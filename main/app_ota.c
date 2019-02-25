@@ -49,18 +49,13 @@ int handle_ota_update_cmd(esp_mqtt_event_handle_t event)
     }
   char tmpBuf[128];
   memcpy(tmpBuf, event->data, event->data_len);
-  tmpBuf[event->data_len] = 0;
-  cJSON * root   = cJSON_Parse(tmpBuf);
-  char * url = cJSON_GetObjectItem(root,"ota_url")->valuestring;
-  /* int id = cJSON_GetObjectItem(root,"id")->valueint; */
-  /* int value = cJSON_GetObjectItem(root,"value")->valueint; */
-  /* printf("id: %d\r\n", id); */
+  char * url = "https://sw.iot.cipex.ro:8911/" CONFIG_MQTT_CLIENT_ID ".bin";
+
   printf("url: %s\r\n", url);
   static const char *TAG = "simple_ota_example";
 
   ESP_LOGI(TAG, "Starting OTA example...");
-  extern const uint8_t server_cert_pem_start[] asm("_binary_ca_cert_pem_start");
-  //extern const uint8_t server_cert_pem_end[] asm("_binary_ca_cert_pem_end");
+  extern const uint8_t server_cert_pem_start[] asm("_binary_sw_iot_cipex_ro_pem_start");
 
   esp_http_client_config_t config = {
     .url = url,
