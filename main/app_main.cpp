@@ -12,6 +12,7 @@
 #include "freertos/event_groups.h"
 
 #include "esp_log.h"
+
 extern "C" {
 #include "app_esp32.h"
 #include "app_relay.h"
@@ -22,6 +23,7 @@ extern "C" {
 
 //#include "app_tft.h"
 
+#define FW_VERSION "0.01"
 static const char *TAG = "MQTTS_MAIN";
 
 EventGroupHandle_t wifi_event_group;
@@ -67,7 +69,7 @@ void blink_task(void *pvParameter)
 
 void mqtt_publish_sensor_data(void* pvParameters)
 {
-  const char * sensors_topic = CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/evt/sensors";
+  const char * sensors_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/sensors";
   esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
   ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
   int msg_id;
@@ -83,6 +85,24 @@ void mqtt_publish_sensor_data(void* pvParameters)
     ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
     xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
   }
+}
+
+
+
+void publish_connected_data(esp_mqtt_client_handle_t client)
+{
+
+  const char * connect_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/connected";
+  ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in publish_connected_data");
+  xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
+  char data[256];
+  memset(data,0,256);
+
+  sprintf(data, "{\"v\":\"" FW_VERSION "\"}");
+  int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 0, 0);
+  ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
+  xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
+
 }
 
 
@@ -112,6 +132,7 @@ extern "C" void app_main()
   nvs_flash_init();
   wifi_init();
   esp_mqtt_client_handle_t client = mqtt_init();
+  publish_connected_data(client);
   publish_relay_data(client);
 
 
