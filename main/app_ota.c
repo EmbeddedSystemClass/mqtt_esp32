@@ -42,13 +42,6 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
 int handle_ota_update_cmd(esp_mqtt_event_handle_t event)
 {
   //  esp_mqtt_client_handle_t client = event->client;
-  if (event->data_len >= 128 )
-    {
-      ESP_LOGI(TAG, "unexpected ota cmd payload");
-      return -1;
-    }
-  char tmpBuf[128];
-  memcpy(tmpBuf, event->data, event->data_len);
   char * url = "https://sw.iot.cipex.ro:8911/" CONFIG_MQTT_CLIENT_ID ".bin";
 
   printf("url: %s\r\n", url);
