@@ -55,4 +55,18 @@ config RELAYS_BASE
         Base IO pin of relays
 
 
+config DHT_GPIO
+    int "Base IO pin of DHT sensor"
+    default 22
+    help
+        Base IO pin of DHT sensor
+
+
+config DS18X20_GPIO
+    int "Base IO pin of DS18X20 sonsor(s)"
+    default 21
+    help
+        Base IO pin of DS18X20 sonsor(s)
+
+
 endmenu

@@ -4,11 +4,11 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 
-#include "dht.h"
 
 #include "app_sensors.h"
 
 #include <ds18x20.h>
+#include <dht.h>
 
 
 extern EventGroupHandle_t sensors_event_group;
@@ -23,15 +23,16 @@ extern int16_t humidity;
 static const char *TAG = "MQTTS_DHT22";
 
 
-static const gpio_num_t SENSOR_GPIO = 21;
+static const gpio_num_t SENSOR_GPIO = CONFIG_DS18X20_GPIO;
 static const uint32_t LOOP_DELAY_MS = 250;
 static const int MAX_SENSORS = 8;
 static const int RESCAN_INTERVAL = 8;
 
+const dht_sensor_type_t sensor_type = DHT_TYPE_DHT22;
+const gpio_num_t dht_gpio = CONFIG_DHT_GPIO;
+
 void sensors_read(void* pvParameters)
 {
-  const dht_sensor_type_t sensor_type = DHT_TYPE_DHT22;
-  const gpio_num_t dht_gpio = 22;
 
 
   ds18x20_addr_t addrs[MAX_SENSORS];
@@ -41,21 +42,17 @@ void sensors_read(void* pvParameters)
   while (1)
     {
       //FIXME bug when no sensor
-      /* if (dht_read_data(sensor_type, dht_gpio, &humidity, &temperature) == ESP_OK) */
-      /*   { */
-      /*     xEventGroupSetBits(sensors_event_group, DHT22); */
-      /*     ESP_LOGI(TAG, "Humidity: %.1f%% Temp: %.1fC", humidity / 10., temperature / 10.); */
-      /*   } */
-      /* else */
-      /*   { */
-      /*     ESP_LOGE(TAG, "Could not read data from sensor\n"); */
-      /*   } */
+      if (dht_read_data(sensor_type, dht_gpio, &humidity, &temperature) == ESP_OK)
+        {
+          xEventGroupSetBits(sensors_event_group, DHT22);
+          ESP_LOGI(TAG, "Humidity: %.1f%% Temp: %.1fC", humidity / 10., temperature / 10.);
+        }
+      else
+        {
+          ESP_LOGE(TAG, "Could not read data from sensor\n");
+        }
       //END FIXME
-     /* wtemperature = ds18b20_get_temp(); */
-     /* if (-55. < wtemperature && wtemperature < 125. ) { */
-     /*   xEventGroupSetBits(sensors_event_group, DS); */
-     /*   xEventGroupSetBits(sensors_event_group, DHT22); //FIXME */
-     /* } */
+
 
       sensor_count = ds18x20_scan_devices(SENSOR_GPIO, addrs, MAX_SENSORS);
 
@@ -77,6 +74,7 @@ void sensors_read(void* pvParameters)
           float temp_f = (temp_c * 1.8) + 32;
           printf("  Sensor %08x%08x reports %f deg C (%f deg F)\n", addr0, addr1, temp_c, temp_f);
           wtemperature = temp_c;
+          xEventGroupSetBits(sensors_event_group, DS);
         }
       printf("\n");
 
