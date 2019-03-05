@@ -5,10 +5,16 @@
 #include "freertos/event_groups.h"
 
 
+#include "app_mqtt.h"
+extern EventGroupHandle_t mqtt_event_group;
+extern const int PUBLISHED_BIT;
+
 #include "app_sensors.h"
 
 #include <ds18x20.h>
 #include <dht.h>
+bool heatEnabled = false;
+
 
 
 extern EventGroupHandle_t sensors_event_group;
@@ -31,6 +37,48 @@ static const int RESCAN_INTERVAL = 8;
 const dht_sensor_type_t sensor_type = DHT_TYPE_DHT22;
 const gpio_num_t dht_gpio = CONFIG_DHT_GPIO;
 
+
+
+void updateHeatingState(bool heatEnabled)
+{
+  //FIXME update heat state switch/relay and publish it to mqtt
+}
+
+
+void mqtt_publish_sensor_data(void* pvParameters)
+{
+  const char * sensors_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/sensors";
+  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
+  ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
+  int msg_id;
+
+  int targetWaterTemp=30*10; //30 degrees
+  int targetTemperatureSensibility=5; //0.5 degrees
+
+  if (heatEnabled==true && wtemperature > targetWaterTemp + targetTemperatureSensibility)
+    {
+      heatEnabled=false;
+      updateHeatingState(heatEnabled);
+    }
+
+
+  if (heatEnabled==false && wtemperature < targetWaterTemp - targetTemperatureSensibility)
+    {
+      heatEnabled=true;
+      updateHeatingState(heatEnabled);
+    }
+
+  char data[256];
+  memset(data,0,256);
+  sprintf(data, "{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f, \"wtemperature\":%.1f}",esp_timer_get_time(),humidity / 10., temperature / 10., wtemperature);
+
+  xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
+  msg_id = esp_mqtt_client_publish(client, sensors_topic, data,strlen(data), 1, 0);
+  ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
+  xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
+}
+
+
 void sensors_read(void* pvParameters)
 {
 
@@ -41,24 +89,21 @@ void sensors_read(void* pvParameters)
 
   while (1)
     {
-      //FIXME bug when no sensor
       if (dht_read_data(sensor_type, dht_gpio, &humidity, &temperature) == ESP_OK)
         {
-          xEventGroupSetBits(sensors_event_group, DHT22);
           ESP_LOGI(TAG, "Humidity: %.1f%% Temp: %.1fC", humidity / 10., temperature / 10.);
         }
       else
         {
           ESP_LOGE(TAG, "Could not read data from sensor\n");
         }
-      //END FIXME
 
 
       sensor_count = ds18x20_scan_devices(SENSOR_GPIO, addrs, MAX_SENSORS);
 
       if (sensor_count < 1)
         {
-          printf("No sensors detected!\n");
+          ESP_LOGW(TAG, "No sensors detected!\n");
         }
 
       ds18x20_measure_and_read_multi(SENSOR_GPIO, addrs, sensor_count, temps);
@@ -72,12 +117,11 @@ void sensors_read(void* pvParameters)
           uint32_t addr1 = addrs[j];
           float temp_c = temps[j];
           float temp_f = (temp_c * 1.8) + 32;
-          printf("  Sensor %08x%08x reports %f deg C (%f deg F)\n", addr0, addr1, temp_c, temp_f);
+          ESP_LOGI(TAG,"  Sensor %08x%08x reports %f deg C (%f deg F)\n", addr0, addr1, temp_c, temp_f);
           wtemperature = temp_c;
-          xEventGroupSetBits(sensors_event_group, DS);
         }
-      printf("\n");
 
+      mqtt_publish_sensor_data(pvParameters);
 
       vTaskDelay(5000 / portTICK_PERIOD_MS);
     }

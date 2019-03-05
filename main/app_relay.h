@@ -2,9 +2,15 @@
 #define APP_RELAY_H
 
 #include "mqtt_client.h"
+struct RelayMessage
+{
+    char relayId;
+    char relayValue;
+};
+
 
 void relays_init(void);
 void publish_relay_data(esp_mqtt_client_handle_t client);
-int handle_relay_cmd(esp_mqtt_event_handle_t event);
+void handle_relay_cmd_task(void* pvParameters);
 
 #endif /* APP_RELAY_H */

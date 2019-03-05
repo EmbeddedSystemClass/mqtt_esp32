@@ -8,7 +8,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
-#include "freertos/queue.h"
 #include "freertos/event_groups.h"
 
 #include "esp_log.h"
@@ -29,13 +28,12 @@ EventGroupHandle_t wifi_event_group;
 EventGroupHandle_t mqtt_event_group;
 extern "C" const int CONNECTED_BIT = BIT0;
 extern "C" const int SUBSCRIBED_BIT = BIT1;
-extern "C" const int READY_FOR_REQUEST = BIT2;
+extern "C" const int PUBLISHED_BIT = BIT2;
 
 EventGroupHandle_t sensors_event_group;
 extern "C" const int DHT22 = BIT0;
 extern "C" const int DS = BIT1;
 
-QueueHandle_t xQueue;
 
 float wtemperature = 0;
 
@@ -46,8 +44,6 @@ int16_t humidity = 0;
 int16_t connect_reason;
 const int boot = 0;
 extern "C" const int mqtt_disconnect = 1;
-
-bool heatEnabled = false;
 
 
 #define BLINK_GPIO GPIO_NUM_27
@@ -72,49 +68,49 @@ void blink_task(void *pvParameter)
   }
 }
 
-void updateHeatingState(bool heatEnabled)
-{
-  //FIXME update heat state switch/relay and publish it to mqtt
-}
+// void updateHeatingState(bool heatEnabled)
+// {
+//   //FIXME update heat state switch/relay and publish it to mqtt
+// }
 
 
-void mqtt_publish_sensor_data(void* pvParameters)
-{
-  const char * sensors_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/sensors";
-  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
-  ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
-  int msg_id;
+// void mqtt_publish_sensor_data(void* pvParameters)
+// {
+//   const char * sensors_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/sensors";
+//   esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
+//   ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
+//   int msg_id;
 
-  int targetWaterTemp=30*10; //30 degrees
-  int targetTemperatureSensibility=5; //0.5 degrees
+//   int targetWaterTemp=30*10; //30 degrees
+//   int targetTemperatureSensibility=5; //0.5 degrees
 
-  while(1) {
-    ESP_LOGI(TAG, "waiting DHT22 | DS in mqtt_publish_sensor_data");
-    xEventGroupWaitBits(sensors_event_group, DHT22 | DS, true, true, portMAX_DELAY);
+//   while(1) {
+//     ESP_LOGI(TAG, "waiting DHT22 | DS in mqtt_publish_sensor_data");
+//     // xEventGroupWaitBits(sensors_event_group, DHT22 | DS, true, true, portMAX_DELAY);
 
-    if (heatEnabled==true && wtemperature > targetWaterTemp + targetTemperatureSensibility)
-      {
-        heatEnabled=false;
-        updateHeatingState(heatEnabled);
-      }
+//     if (heatEnabled==true && wtemperature > targetWaterTemp + targetTemperatureSensibility)
+//       {
+//         heatEnabled=false;
+//         updateHeatingState(heatEnabled);
+//       }
 
 
-    if (heatEnabled==false && wtemperature < targetWaterTemp - targetTemperatureSensibility)
-      {
-        heatEnabled=true;
-        updateHeatingState(heatEnabled);
-      }
+//     if (heatEnabled==false && wtemperature < targetWaterTemp - targetTemperatureSensibility)
+//       {
+//         heatEnabled=true;
+//         updateHeatingState(heatEnabled);
+//       }
 
-    ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in mqtt_publish_sensor_data");
-    xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
-    char data[256];
-    memset(data,0,256);
-    sprintf(data, "{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f, \"wtemperature\":%.1f}",esp_timer_get_time(),humidity / 10., temperature / 10., wtemperature);
-    msg_id = esp_mqtt_client_publish(client, sensors_topic, data,strlen(data), 0, 0);
-    ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
-    xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
-  }
-}
+//     ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in mqtt_publish_sensor_data");
+//     // xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
+//     char data[256];
+//     memset(data,0,256);
+//     sprintf(data, "{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f, \"wtemperature\":%.1f}",esp_timer_get_time(),humidity / 10., temperature / 10., wtemperature);
+//     msg_id = esp_mqtt_client_publish(client, sensors_topic, data,strlen(data), 0, 0);
+//     ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
+//     // xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
+//   }
+// }
 
 
 
@@ -140,8 +136,6 @@ extern "C" void app_main()
   sensors_event_group = xEventGroupCreate();
   wifi_event_group = xEventGroupCreate();
 
-  xQueue = xQueueCreate(8, sizeof(esp_mqtt_client_handle_t) );
-
   xTaskCreate(blink_task, "blink_task", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -157,7 +151,7 @@ extern "C" void app_main()
   publish_relay_data(client);
 
   xTaskCreate(sensors_read, "sensors_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
-  xTaskCreate(mqtt_publish_sensor_data, "mqtt_publish_sensor_data", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+  xTaskCreate(handle_relay_cmd_task, "handle_relay_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
 
 
   //xTaskCreate(tft_handler, "tft_handler", configMINIMAL_STACK_SIZE * 3, NULL, 7, NULL);
