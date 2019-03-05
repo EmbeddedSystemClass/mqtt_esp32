@@ -13,6 +13,8 @@ extern const int CONNECTED_BIT;
 extern const int SUBSCRIBED_BIT;
 extern const int READY_FOR_REQUEST;
 
+extern int16_t connect_reason;
+
 extern QueueHandle_t xQueue;
 
 

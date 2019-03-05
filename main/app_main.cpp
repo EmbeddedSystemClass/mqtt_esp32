@@ -23,7 +23,6 @@ extern "C" {
 
 //#include "app_tft.h"
 
-#define FW_VERSION "0.01"
 static const char *TAG = "MQTTS_MAIN";
 
 EventGroupHandle_t wifi_event_group;
@@ -42,6 +41,13 @@ float wtemperature = 0;
 
 int16_t temperature = 0;
 int16_t humidity = 0;
+
+
+int16_t connect_reason;
+const int boot = 0;
+extern "C" const int mqtt_disconnect = 1;
+
+bool heatEnabled = false;
 
 
 #define BLINK_GPIO GPIO_NUM_27
@@ -66,6 +72,11 @@ void blink_task(void *pvParameter)
   }
 }
 
+void updateHeatingState(bool heatEnabled)
+{
+  //FIXME update heat state switch/relay and publish it to mqtt
+}
+
 
 void mqtt_publish_sensor_data(void* pvParameters)
 {
@@ -73,9 +84,27 @@ void mqtt_publish_sensor_data(void* pvParameters)
   esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
   ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
   int msg_id;
+
+  int targetWaterTemp=30*10; //30 degrees
+  int targetTemperatureSensibility=5; //0.5 degrees
+
   while(1) {
     ESP_LOGI(TAG, "waiting DHT22 | DS in mqtt_publish_sensor_data");
     xEventGroupWaitBits(sensors_event_group, DHT22 | DS, true, true, portMAX_DELAY);
+
+    if (heatEnabled==true && wtemperature > targetWaterTemp + targetTemperatureSensibility)
+      {
+        heatEnabled=false;
+        updateHeatingState(heatEnabled);
+      }
+
+
+    if (heatEnabled==false && wtemperature < targetWaterTemp - targetTemperatureSensibility)
+      {
+        heatEnabled=true;
+        updateHeatingState(heatEnabled);
+      }
+
     ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in mqtt_publish_sensor_data");
     xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
     char data[256];
@@ -89,25 +118,10 @@ void mqtt_publish_sensor_data(void* pvParameters)
 
 
 
-void publish_connected_data(esp_mqtt_client_handle_t client)
-{
-
-  const char * connect_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/connected";
-  ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in publish_connected_data");
-  xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
-  char data[256];
-  memset(data,0,256);
-
-  sprintf(data, "{\"v\":\"" FW_VERSION "\"}");
-  int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 0, 0);
-  ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
-  xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
-
-}
-
 
 extern "C" void app_main()
 {
+  connect_reason=boot;
   ESP_LOGI(TAG, "[APP] Startup..");
   ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
   ESP_LOGI(TAG, "[APP] IDF version: %s", esp_get_idf_version());
@@ -119,6 +133,7 @@ extern "C" void app_main()
   esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
   esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
 
+ 
   relays_init();
 
   mqtt_event_group = xEventGroupCreate();
@@ -128,13 +143,18 @@ extern "C" void app_main()
   xQueue = xQueueCreate(8, sizeof(esp_mqtt_client_handle_t) );
 
   xTaskCreate(blink_task, "blink_task", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
-
-  nvs_flash_init();
+  esp_err_t err = nvs_flash_init();
+  if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    // NVS partition was truncated and needs to be erased
+    // Retry nvs_flash_init
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    err = nvs_flash_init();
+  }
+  ESP_ERROR_CHECK( err );
+ 
   wifi_init();
   esp_mqtt_client_handle_t client = mqtt_init();
-  publish_connected_data(client);
   publish_relay_data(client);
-
 
   xTaskCreate(sensors_read, "sensors_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
   xTaskCreate(mqtt_publish_sensor_data, "mqtt_publish_sensor_data", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);

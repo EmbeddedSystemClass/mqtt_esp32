@@ -79,6 +79,6 @@ void sensors_read(void* pvParameters)
       printf("\n");
 
 
-      vTaskDelay(60000 / portTICK_PERIOD_MS);
+      vTaskDelay(5000 / portTICK_PERIOD_MS);
     }
 }

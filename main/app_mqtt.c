@@ -15,6 +15,11 @@ extern const int CONNECTED_BIT;
 extern const int SUBSCRIBED_BIT;
 extern const int READY_FOR_REQUEST;
 
+
+extern int16_t connect_reason;
+extern const int mqtt_disconnect;
+#define FW_VERSION "0.02.05"
+
 extern QueueHandle_t xQueue;
 
 static const char *TAG = "MQTTS_MQTTS";
@@ -37,6 +42,22 @@ void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
   }
 }
 
+void publish_connected_data(esp_mqtt_client_handle_t client)
+{
+
+  const char * connect_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/connected";
+  ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in publish_connected_data");
+  xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
+  char data[256];
+  memset(data,0,256);
+
+  sprintf(data, "{\"v\":\"" FW_VERSION "\", \"r\":%d}", connect_reason);
+  int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 0, 0);
+  ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
+  xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
+
+}
+
 
 static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 {
@@ -44,6 +65,8 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
   case MQTT_EVENT_CONNECTED:
     xEventGroupSetBits(mqtt_event_group, CONNECTED_BIT | READY_FOR_REQUEST);
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+    publish_connected_data(event->client);
+            
     if (xQueueSend( xQueue
                     ,( void * )&(event->client)
                     ,portMAX_DELAY) != pdPASS) {
@@ -52,6 +75,8 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
     break;
   case MQTT_EVENT_DISCONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
+    connect_reason=mqtt_disconnect;
+
     xEventGroupClearBits(mqtt_event_group, CONNECTED_BIT | SUBSCRIBED_BIT | READY_FOR_REQUEST);
     break;
 
@@ -79,6 +104,7 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
   }
   return ESP_OK;
 }
+
 
 
 static void mqtt_app_start(esp_mqtt_client_handle_t client)
