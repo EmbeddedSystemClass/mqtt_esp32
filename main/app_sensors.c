@@ -123,6 +123,6 @@ void sensors_read(void* pvParameters)
 
       mqtt_publish_sensor_data(pvParameters);
 
-      vTaskDelay(5000 / portTICK_PERIOD_MS);
+      vTaskDelay(60000 / portTICK_PERIOD_MS);
     }
 }

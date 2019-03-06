@@ -30,8 +30,14 @@ on MQTT_EVENT_CONNECTED:
  relays(to_be_created) - queue read from mqttt_handler
  ota(to_be_created) - queue read from mqtt_handler (to be implemented)
 
+
+## LED interface:
+ * led on after startup, fast-blink after wifi and normal blink after mqtt
+ 
 ## todo
+ * led on after startup, fast-blink after wifi and normal blink after mqtt or something to see loop reboot on blink
  * add ota to dedicated thread (check if ota stability is improved)
+ * rewrite ota using native method and check for error 76 or size and retry
  * remove unused code/flags/etc.
  * add variable read from nv and publish in connect message (temp + sensibility)
  * subscribe to variable change and save to nvram
