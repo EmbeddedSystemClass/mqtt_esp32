@@ -82,6 +82,7 @@ void sensors_read(void* pvParameters)
       if (sensor_count < 1)
         {
           ESP_LOGW(TAG, "No sensors detected!\n");
+          wtemperature=-1;
         }
 
       ds18x20_measure_and_read_multi(SENSOR_GPIO, addrs, sensor_count, temps);
@@ -98,9 +99,10 @@ void sensors_read(void* pvParameters)
           ESP_LOGI(TAG,"  Sensor %08x%08x reports %f deg C (%f deg F)\n", addr0, addr1, temp_c, temp_f);
           wtemperature = temp_c;
         }
-
-      mqtt_publish_sensor_data(pvParameters);
-      update_thermostat();
+      if (wtemperature > -1) {
+        mqtt_publish_sensor_data(pvParameters);
+        update_thermostat();
+      }
       //vTaskDelay(60000 / portTICK_PERIOD_MS);
       vTaskDelay(10000 / portTICK_PERIOD_MS);
     }

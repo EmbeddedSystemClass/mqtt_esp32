@@ -92,11 +92,18 @@ void updateHeatingState(bool heatEnabled)
 void update_thermostat()
 {
 
-
   ESP_LOGI(TAG, "heat state is %d", heatEnabled);
   ESP_LOGI(TAG, "wtemperature is %f", wtemperature);
   ESP_LOGI(TAG, "targetTemperature is %d", targetTemperature);
   ESP_LOGI(TAG, "targetTemperatureSensibility is %d", targetTemperatureSensibility);
+  if ( wtemperature == -1 )
+    {
+      ESP_LOGI(TAG, "sensor is not reporting, stop heating as we are blind");
+      if (heatEnabled==true) {
+        heatEnabled=false;
+        updateHeatingState(heatEnabled);
+      }
+    }
 
   if (heatEnabled==true && wtemperature * 10 > targetTemperature + targetTemperatureSensibility)
     {
