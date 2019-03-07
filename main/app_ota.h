@@ -3,8 +3,11 @@
 
 #include "mqtt_client.h"
 
-int handle_ota_update_cmd(esp_mqtt_event_handle_t event);
+void handle_ota_update_task(void* pvParameters);
 
-
+struct OtaMessage
+{
+  char url[64];
+};
 
 #endif /* APP_OTA_H */

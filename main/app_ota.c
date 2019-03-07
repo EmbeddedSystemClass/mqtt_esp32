@@ -4,14 +4,21 @@
 #include "esp_https_ota.h"
 #include "esp_flash_partitions.h"
 #include "esp_partition.h"
+
 #include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
+#include "freertos/event_groups.h"
+#include "freertos/queue.h"
 
 #include "cJSON.h"
 
 #include "app_ota.h"
 
 static const char *TAG = "MQTTS_OTA";
+
+extern QueueHandle_t otaQueue;
+
+extern EventGroupHandle_t mqtt_event_group;
+extern const int PUBLISHED_BIT;
 
 
 /* #define BUFFSIZE 1024 */
@@ -33,7 +40,7 @@ static const char *TAG = "MQTTS_OTA";
 /*   //  esp_mqtt_client_handle_t client = event->client; */
 /*   char * url = "https://sw.iot.cipex.ro:8911/" CONFIG_MQTT_CLIENT_ID ".bin"; */
 /*   extern const uint8_t server_cert_pem_start[] asm("_binary_sw_iot_cipex_ro_pem_start"); */
-  
+
 /*   printf("url: %s\r\n", url); */
 
 /*   esp_err_t err; */
@@ -45,7 +52,7 @@ static const char *TAG = "MQTTS_OTA";
 
 /*   const esp_partition_t *configured = esp_ota_get_boot_partition(); */
 /*   const esp_partition_t *running = esp_ota_get_running_partition(); */
-  
+
 /*   if (configured != running) { */
 /*     ESP_LOGW(TAG, "Configured OTA boot partition at offset 0x%08x, but running from offset 0x%08x", */
 /*              configured->address, running->address); */
@@ -53,8 +60,8 @@ static const char *TAG = "MQTTS_OTA";
 /*   } */
 /*   ESP_LOGI(TAG, "Running partition type %d subtype %d (offset 0x%08x)", */
 /*            running->type, running->subtype, running->address); */
-  
-    
+
+
 /*   esp_http_client_config_t config = { */
 /*     .url = url, */
 /*     .cert_pem = (char *)server_cert_pem_start, */
@@ -140,6 +147,22 @@ static const char *TAG = "MQTTS_OTA";
 // old code bellow
 
 
+void publish_ota_data(esp_mqtt_client_handle_t client, int status)
+{
+
+  const char * connect_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/ota";
+  char data[256];
+  memset(data,0,256);
+
+  sprintf(data, "{\"status\":%d}", status);
+  xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
+  int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 1, 0);
+  ESP_LOGI(TAG, "sent publish ota data successful, msg_id=%d", msg_id);
+  xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
+
+}
+
+
 esp_err_t _http_event_handler(esp_http_client_event_t *evt)
 {
   switch(evt->event_id) {
@@ -168,31 +191,45 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
   return ESP_OK;
 }
 
-int handle_ota_update_cmd(esp_mqtt_event_handle_t event)
+
+#define OTA_FAILED -1
+#define OTA_SUCCESFULL 0
+#define OTA_ONGOING 1
+#define OTA_READY 2
+
+void handle_ota_update_task(void* pvParameters)
 {
 
-  //  esp_mqtt_client_handle_t client = event->client;
-  char * url = "https://sw.iot.cipex.ro:8911/" CONFIG_MQTT_CLIENT_ID ".bin";
+  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
+  publish_ota_data(client, OTA_READY);
+  struct OtaMessage o;
+  while(1) {
+    if( xQueueReceive( otaQueue, &o , portMAX_DELAY) )
+      {
 
-  printf("url: %s\r\n", url);
-  static const char *TAG = "simple_ota_example";
+        publish_ota_data(client, OTA_ONGOING);
+        char * url=o.url;
+        static const char *TAG = "simple_ota_example";
 
-  ESP_LOGI(TAG, "Starting OTA example...");
-  extern const uint8_t server_cert_pem_start[] asm("_binary_sw_iot_cipex_ro_pem_start");
+        ESP_LOGI(TAG, "Starting OTA example...");
+        extern const uint8_t server_cert_pem_start[] asm("_binary_sw_iot_cipex_ro_pem_start");
 
-  esp_http_client_config_t config = {
-    .url = url,
-    .cert_pem = (char *)server_cert_pem_start,
-    .event_handler = _http_event_handler,
-  };
-  esp_err_t ret = esp_https_ota(&config);
-  if (ret == ESP_OK) {
-    ESP_LOGI(TAG, "Firmware Upgrades Success, will restart in 10 seconds");
-    vTaskDelay(10000 / portTICK_PERIOD_MS);
-    esp_restart();
-  } else {
-    ESP_LOGE(TAG, "Firmware Upgrades Failed");
+        esp_http_client_config_t config = {
+          .url = url,
+          .cert_pem = (char *)server_cert_pem_start,
+          .event_handler = _http_event_handler,
+        };
+        esp_err_t ret = esp_https_ota(&config);
+        if (ret == ESP_OK) {
+          ESP_LOGI(TAG, "Firmware Upgrades Success, will restart in 10 seconds");
+          publish_ota_data(client, OTA_SUCCESFULL);
+          vTaskDelay(10000 / portTICK_PERIOD_MS);
+          esp_restart();
+        } else {
+          publish_ota_data(client, OTA_FAILED);
+          ESP_LOGE(TAG, "Firmware Upgrades Failed");
+        }
+      }
   }
-  return true;
 }
 

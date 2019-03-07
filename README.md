@@ -35,13 +35,16 @@ on MQTT_EVENT_CONNECTED:
  * led on after startup, fast-blink after wifi and normal blink after mqtt
  
 ## todo
- * led on after startup, fast-blink after wifi and normal blink after mqtt or something to see loop reboot on blink
- * add ota to dedicated thread (check if ota stability is improved)
- * rewrite ota using native method and check for error 76 or size and retry
- * remove unused code/flags/etc.
  * add variable read from nv and publish in connect message (temp + sensibility)
+   * done temp, sensibility to be added
  * subscribe to variable change and save to nvram
- * rewrite relays from esp8266
+    * together with above
+ * rewrite relays from esp8266 (or even better, as we need separate command for each)
+ * connect thermostat with relay0 and disable relay0 button/cmd/subscription
+ * mount the box
+ * mount in garage with sensors on the right places
+* rewrite ota using native method and check for error 76 or size and retry
+ * remove unused code/flags/etc.
  * implement/check thermostat code
 
  * sonoff basic

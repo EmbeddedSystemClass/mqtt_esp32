@@ -6,6 +6,7 @@
 
 #include "app_relay.h"
 #include "app_ota.h"
+#include "app_thermostat.h"
 #include "app_mqtt.h"
 
 #include "cJSON.h"
@@ -23,19 +24,23 @@ extern const int mqtt_disconnect;
 #define FW_VERSION "0.02.05"
 
 QueueHandle_t relayQueue;
+QueueHandle_t otaQueue;
+QueueHandle_t thermostatQueue;
 
 static const char *TAG = "MQTTS_MQTTS";
 
 
 
-#define MAX_SUB 2
+#define MAX_SUB 3
 #define RELAY_TOPIC CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/cmd/relay"
 #define OTA_TOPIC CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/cmd/ota"
+#define THERMOSTAT_TOPIC CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/cmd/thermostat"
 
 const char *SUBSCRIPTIONS[MAX_SUB] =
   {
     RELAY_TOPIC,
-    OTA_TOPIC
+    OTA_TOPIC,
+    THERMOSTAT_TOPIC
   };
 
 
@@ -67,8 +72,32 @@ void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
     }
   }
   if (strncmp(event->topic, OTA_TOPIC, strlen(OTA_TOPIC)) == 0) {
-    if (handle_ota_update_cmd(event)) {
-      ESP_LOGI(TAG, "cannot handle ota_update cmd");
+    struct OtaMessage o={"https://sw.iot.cipex.ro:8911/" CONFIG_MQTT_CLIENT_ID ".bin"};
+    if (xQueueSend( otaQueue
+                    ,( void * )&o
+                    ,portMAX_DELAY) != pdPASS) {
+      ESP_LOGE(TAG, "Cannot send to relayQueue");
+
+    }
+  }
+
+  if (strncmp(event->topic, THERMOSTAT_TOPIC, strlen(THERMOSTAT_TOPIC)) == 0) {
+    if (event->data_len >= 64 )
+      {
+        ESP_LOGI(TAG, "unextected relay cmd payload");
+        return;
+      }
+    char tmpBuf[64];
+    memcpy(tmpBuf, event->data, event->data_len);
+    tmpBuf[event->data_len] = 0;
+    cJSON * root   = cJSON_Parse(tmpBuf);
+    float targetTemperature = cJSON_GetObjectItem(root,"targetTemperature")->valuedouble;
+    printf("targetTemperature: %f\r\n", targetTemperature);
+    struct ThermostatMessage t={targetTemperature};
+    if (xQueueSend( thermostatQueue
+                    ,( void * )&t
+                    ,portMAX_DELAY) != pdPASS) {
+      ESP_LOGE(TAG, "Cannot send to thermostatQueue");
     }
 
   }
@@ -163,12 +192,13 @@ esp_mqtt_client_handle_t mqtt_init()
   };
 
   esp_mqtt_client_handle_t client = mqtt_app_init_start(&mqtt_cfg);
-  relayQueue = xQueueCreate(1, sizeof(struct RelayMessage *) );
-    
+  thermostatQueue = xQueueCreate(1, sizeof(struct ThermostatMessage) );
+  relayQueue = xQueueCreate(1, sizeof(struct RelayMessage) );
+  otaQueue = xQueueCreate(1, sizeof(struct OtaMessage) );
 
   mqtt_subscribe(client);
   publish_connected_data(client);
-    
+
 
   return client;
 }

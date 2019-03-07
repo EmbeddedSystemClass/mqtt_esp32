@@ -5,7 +5,9 @@
 #include "freertos/event_groups.h"
 
 
+
 #include "app_mqtt.h"
+#include "app_thermostat.h"
 extern EventGroupHandle_t mqtt_event_group;
 extern const int PUBLISHED_BIT;
 
@@ -13,8 +15,6 @@ extern const int PUBLISHED_BIT;
 
 #include <ds18x20.h>
 #include <dht.h>
-bool heatEnabled = false;
-
 
 
 extern EventGroupHandle_t sensors_event_group;
@@ -39,11 +39,6 @@ const gpio_num_t dht_gpio = CONFIG_DHT_GPIO;
 
 
 
-void updateHeatingState(bool heatEnabled)
-{
-  //FIXME update heat state switch/relay and publish it to mqtt
-}
-
 
 void mqtt_publish_sensor_data(void* pvParameters)
 {
@@ -51,22 +46,6 @@ void mqtt_publish_sensor_data(void* pvParameters)
   esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
   ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
   int msg_id;
-
-  int targetWaterTemp=30*10; //30 degrees
-  int targetTemperatureSensibility=5; //0.5 degrees
-
-  if (heatEnabled==true && wtemperature > targetWaterTemp + targetTemperatureSensibility)
-    {
-      heatEnabled=false;
-      updateHeatingState(heatEnabled);
-    }
-
-
-  if (heatEnabled==false && wtemperature < targetWaterTemp - targetTemperatureSensibility)
-    {
-      heatEnabled=true;
-      updateHeatingState(heatEnabled);
-    }
 
   char data[256];
   memset(data,0,256);
@@ -81,7 +60,6 @@ void mqtt_publish_sensor_data(void* pvParameters)
 
 void sensors_read(void* pvParameters)
 {
-
 
   ds18x20_addr_t addrs[MAX_SENSORS];
   float temps[MAX_SENSORS];
@@ -122,7 +100,8 @@ void sensors_read(void* pvParameters)
         }
 
       mqtt_publish_sensor_data(pvParameters);
-
-      vTaskDelay(60000 / portTICK_PERIOD_MS);
+      update_thermostat();
+      //vTaskDelay(60000 / portTICK_PERIOD_MS);
+      vTaskDelay(10000 / portTICK_PERIOD_MS);
     }
 }

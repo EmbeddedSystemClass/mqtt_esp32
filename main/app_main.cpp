@@ -14,10 +14,14 @@
 
 extern "C" {
 #include "app_esp32.h"
-#include "app_relay.h"
+
 #include "app_wifi.h"
-#include "app_sensors.h"
 #include "app_mqtt.h"
+
+#include "app_sensors.h"
+#include "app_thermostat.h"
+#include "app_relay.h"
+#include "app_ota.h"
 }
 
 //#include "app_tft.h"
@@ -138,7 +142,7 @@ extern "C" void app_main()
   esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
   esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
 
- 
+
   relays_init();
 
   mqtt_event_group = xEventGroupCreate();
@@ -154,13 +158,20 @@ extern "C" void app_main()
     err = nvs_flash_init();
   }
   ESP_ERROR_CHECK( err );
- 
+
+  err=read_thermostat_nvs();
+  ESP_ERROR_CHECK( err );
+
   wifi_init();
   esp_mqtt_client_handle_t client = mqtt_init();
   publish_relay_data(client);
+  publish_thermostat_data(client);
 
   xTaskCreate(sensors_read, "sensors_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
+
   xTaskCreate(handle_relay_cmd_task, "handle_relay_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+  xTaskCreate(handle_ota_update_task, "handle_ota_update_task", configMINIMAL_STACK_SIZE * 7, (void *)client, 5, NULL);
+  xTaskCreate(handle_thermostat_cmd_task, "handle_relay_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
 
 
   //xTaskCreate(tft_handler, "tft_handler", configMINIMAL_STACK_SIZE * 3, NULL, 7, NULL);
