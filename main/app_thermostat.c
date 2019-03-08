@@ -6,6 +6,7 @@
 
 #include "nvs.h"
 
+#include "app_relay.h"
 #include "app_thermostat.h"
 
 
@@ -33,8 +34,12 @@ void publish_thermostat_data(esp_mqtt_client_handle_t client)
   sprintf(data, "{\"targetTemperature\":%02f}", targetTemperature/10.);
   xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
   int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 1, 0);
-  ESP_LOGI(TAG, "sent publish thermostat data successful, msg_id=%d", msg_id);
-  xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
+  if (msg_id > 0) {
+    ESP_LOGI(TAG, "sent publish thermostat data successful, msg_id=%d", msg_id);
+    xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
+  } else {
+    ESP_LOGI(TAG, "failed to publish thermostat, msg_id=%d", msg_id);
+  }
 
 }
 
@@ -85,11 +90,20 @@ esp_err_t read_thermostat_nvs()
 
 void updateHeatingState(bool heatEnabled)
 {
+  if (heatEnabled)
+    {
+      update_relay_state(0,1);
+    }
+  else
+    {
+      update_relay_state(0,0);
+    }
+
   ESP_LOGI(TAG, "heat state updated to %d", heatEnabled);
 }
 
 
-void update_thermostat()
+void update_thermostat(esp_mqtt_client_handle_t client)
 {
 
   ESP_LOGI(TAG, "heat state is %d", heatEnabled);
@@ -102,13 +116,17 @@ void update_thermostat()
       if (heatEnabled==true) {
         heatEnabled=false;
         updateHeatingState(heatEnabled);
+        publish_relay_data(client);
+
       }
+      return;
     }
 
   if (heatEnabled==true && wtemperature * 10 > targetTemperature + targetTemperatureSensibility)
     {
       heatEnabled=false;
       updateHeatingState(heatEnabled);
+      publish_relay_data(client);
     }
 
 
@@ -116,13 +134,15 @@ void update_thermostat()
     {
       heatEnabled=true;
       updateHeatingState(heatEnabled);
+      publish_relay_data(client);
+
     }
 
 }
 
 void handle_thermostat_cmd_task(void* pvParameters)
 {
-  //esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
+  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
   struct ThermostatMessage t;
   while(1) {
     if( xQueueReceive( thermostatQueue, &t , portMAX_DELAY) )
@@ -131,7 +151,7 @@ void handle_thermostat_cmd_task(void* pvParameters)
           targetTemperature=t.targetTemperature*10;
           esp_err_t err = write_thermostat_nvs();
           ESP_ERROR_CHECK( err );
-          update_thermostat();
+          update_thermostat(client);
         }
       }
   }

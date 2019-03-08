@@ -49,11 +49,29 @@ void publish_relay_data(esp_mqtt_client_handle_t client)
   
   xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
   int msg_id = esp_mqtt_client_publish(client, relays_topic, data,strlen(data), 1, 0);
-  ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
-  xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
+  if (msg_id > 0) {
+    ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
+    xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
+  } else {
+    ESP_LOGI(TAG, "failed to publish relay, msg_id=%d", msg_id);
+  }
 
 }
 
+void update_relay_state(int id, char value)
+{
+  if (value == relayStatus[id]) {
+    //reversed logic
+    if (value == OFF) {
+      relayStatus[id] = ON;
+    }
+    if (value == ON) {
+      relayStatus[id] = OFF;
+    }
+    gpio_set_level(relayBase + id, relayStatus[id]);
+  }
+
+}
 
 void handle_relay_cmd_task(void* pvParameters)
 {
@@ -66,17 +84,9 @@ void handle_relay_cmd_task(void* pvParameters)
       {
         id=r.relayId;
         value=r.relayValue;
-        if (value == relayStatus[id]) {
-          //reversed logic
-          if (value == OFF) {
-            relayStatus[id] = ON;
-          }
-          if (value == ON) {
-            relayStatus[id] = OFF;
-          }
-          gpio_set_level(relayBase + id, relayStatus[id]);
-          publish_relay_data(client);
-        }
+        update_relay_state(id, value);
+        publish_relay_data(client);
+
       }
   }
 }

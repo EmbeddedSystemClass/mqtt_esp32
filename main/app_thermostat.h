@@ -5,7 +5,7 @@
 
 void publish_thermostat_data(esp_mqtt_client_handle_t client);
 esp_err_t read_thermostat_nvs(void);
-void update_thermostat(void);
+void update_thermostat(esp_mqtt_client_handle_t client);
 
 struct ThermostatMessage {
   float targetTemperature;

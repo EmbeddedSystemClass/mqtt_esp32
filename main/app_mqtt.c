@@ -17,6 +17,7 @@ extern EventGroupHandle_t mqtt_event_group;
 extern const int CONNECTED_BIT;
 extern const int SUBSCRIBED_BIT;
 extern const int PUBLISHED_BIT;
+extern const int INIT_FINISHED_BIT;
 
 
 extern int16_t connect_reason;
@@ -26,19 +27,21 @@ extern const int mqtt_disconnect;
 QueueHandle_t relayQueue;
 QueueHandle_t otaQueue;
 QueueHandle_t thermostatQueue;
+QueueHandle_t mqttQueue;
 
 static const char *TAG = "MQTTS_MQTTS";
 
 
 
-#define MAX_SUB 3
+#define MAX_SUB 4
 #define RELAY_TOPIC CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/cmd/relay"
 #define OTA_TOPIC CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/cmd/ota"
 #define THERMOSTAT_TOPIC CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/cmd/thermostat"
 
 const char *SUBSCRIPTIONS[MAX_SUB] =
   {
-    RELAY_TOPIC,
+    RELAY_TOPIC "/0",
+    RELAY_TOPIC "/1",
     OTA_TOPIC,
     THERMOSTAT_TOPIC
   };
@@ -50,18 +53,28 @@ void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
 {
 
   if (strncmp(event->topic, RELAY_TOPIC, strlen(RELAY_TOPIC)) == 0) {
-
+    char id=255;
+    if (strncmp(event->topic, RELAY_TOPIC "/0", strlen(RELAY_TOPIC "/0")) == 0) {
+      id=0;
+    }
+    if (strncmp(event->topic, RELAY_TOPIC "/1", strlen(RELAY_TOPIC "/1")) == 0) {
+      id=1;
+    }
+    if(id == 255)
+      {
+        ESP_LOGI(TAG, "unexpected relay id");
+        return;
+      }
     if (event->data_len >= 32 )
       {
-        ESP_LOGI(TAG, "unextected relay cmd payload");
+        ESP_LOGI(TAG, "unexpected relay cmd payload");
         return;
       }
     char tmpBuf[32];
     memcpy(tmpBuf, event->data, event->data_len);
     tmpBuf[event->data_len] = 0;
     cJSON * root   = cJSON_Parse(tmpBuf);
-    char id = cJSON_GetObjectItem(root,"id")->valueint;
-    char value = cJSON_GetObjectItem(root,"value")->valueint;
+    char value = cJSON_GetObjectItem(root,"state")->valueint;
     printf("id: %d\r\n", id);
     printf("value: %d\r\n", value);
     struct RelayMessage r={id, value};
@@ -113,9 +126,12 @@ void publish_connected_data(esp_mqtt_client_handle_t client)
   sprintf(data, "{\"v\":\"" FW_VERSION "\", \"r\":%d}", connect_reason);
   xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
   int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 1, 0);
-  ESP_LOGI(TAG, "sent publish connected data successful, msg_id=%d", msg_id);
-  xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
-
+  if (msg_id > 0) {
+    ESP_LOGI(TAG, "sent publish connected data successful, msg_id=%d", msg_id);
+    xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
+  } else {
+    ESP_LOGI(TAG, "failed to publish connected data, msg_id=%d", msg_id);
+  }
 }
 
 
@@ -124,13 +140,19 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
   switch (event->event_id) {
   case MQTT_EVENT_CONNECTED:
     xEventGroupSetBits(mqtt_event_group, CONNECTED_BIT);
+    void * unused;
+    if (xQueueSend( mqttQueue
+                    ,( void * )&unused
+                    ,portMAX_DELAY) != pdPASS) {
+      ESP_LOGE(TAG, "Cannot send to relayQueue");
+    }
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
     break;
   case MQTT_EVENT_DISCONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
     connect_reason=mqtt_disconnect;
 
-    xEventGroupClearBits(mqtt_event_group, CONNECTED_BIT | SUBSCRIBED_BIT | PUBLISHED_BIT);
+    xEventGroupClearBits(mqtt_event_group, CONNECTED_BIT | SUBSCRIBED_BIT | PUBLISHED_BIT | INIT_FINISHED_BIT);
     break;
 
   case MQTT_EVENT_SUBSCRIBED:
@@ -191,14 +213,29 @@ esp_mqtt_client_handle_t mqtt_init()
     .keepalive = 60
   };
 
-  esp_mqtt_client_handle_t client = mqtt_app_init_start(&mqtt_cfg);
   thermostatQueue = xQueueCreate(1, sizeof(struct ThermostatMessage) );
   relayQueue = xQueueCreate(1, sizeof(struct RelayMessage) );
   otaQueue = xQueueCreate(1, sizeof(struct OtaMessage) );
-
-  mqtt_subscribe(client);
-  publish_connected_data(client);
-
-
+  mqttQueue = xQueueCreate(1, sizeof(void *) );
+  esp_mqtt_client_handle_t client = mqtt_app_init_start(&mqtt_cfg);
   return client;
+}
+
+
+
+void handle_mqtt_sub_pub(void* pvParameters)
+{
+  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
+  void * unused;
+  while(1) {
+    if( xQueueReceive( mqttQueue, &unused , portMAX_DELAY) )
+      {
+        xEventGroupClearBits(mqtt_event_group, INIT_FINISHED_BIT);
+        mqtt_subscribe(client);
+        publish_connected_data(client);
+        publish_relay_data(client);
+        publish_thermostat_data(client);
+        xEventGroupSetBits(mqtt_event_group, INIT_FINISHED_BIT);
+      }
+  }
 }

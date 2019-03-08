@@ -33,6 +33,7 @@ EventGroupHandle_t mqtt_event_group;
 extern "C" const int CONNECTED_BIT = BIT0;
 extern "C" const int SUBSCRIBED_BIT = BIT1;
 extern "C" const int PUBLISHED_BIT = BIT2;
+extern "C" const int INIT_FINISHED_BIT = BIT3;
 
 EventGroupHandle_t sensors_event_group;
 extern "C" const int DHT22 = BIT0;
@@ -164,8 +165,10 @@ extern "C" void app_main()
 
   wifi_init();
   esp_mqtt_client_handle_t client = mqtt_init();
-  publish_relay_data(client);
-  publish_thermostat_data(client);
+  xTaskCreate(handle_mqtt_sub_pub, "handle_mqtt_sub_pub", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+  xEventGroupWaitBits(mqtt_event_group, INIT_FINISHED_BIT, false, true, portMAX_DELAY);
+
+
 
   xTaskCreate(sensors_read, "sensors_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
 

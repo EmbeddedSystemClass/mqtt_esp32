@@ -5,6 +5,9 @@
 #include "esp_flash_partitions.h"
 #include "esp_partition.h"
 
+
+#include "esp_wifi.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
@@ -18,6 +21,7 @@ static const char *TAG = "MQTTS_OTA";
 extern QueueHandle_t otaQueue;
 
 extern EventGroupHandle_t mqtt_event_group;
+extern const int CONNECTED_BIT;
 extern const int PUBLISHED_BIT;
 
 
@@ -157,8 +161,12 @@ void publish_ota_data(esp_mqtt_client_handle_t client, int status)
   sprintf(data, "{\"status\":%d}", status);
   xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
   int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 1, 0);
-  ESP_LOGI(TAG, "sent publish ota data successful, msg_id=%d", msg_id);
-  xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
+  if (msg_id > 0) {
+    ESP_LOGI(TAG, "sent publish ota data successful, msg_id=%d", msg_id);
+    xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
+  } else {
+    ESP_LOGI(TAG, "failed to publish ota data, msg_id=%d", msg_id);
+  }
 
 }
 
@@ -207,6 +215,10 @@ void handle_ota_update_task(void* pvParameters)
     if( xQueueReceive( otaQueue, &o , portMAX_DELAY) )
       {
 
+        /* esp_wifi_stop(); */
+        /* vTaskDelay(60000 / portTICK_PERIOD_MS); */
+        /* esp_wifi_start(); */
+        /* xEventGroupWaitBits(mqtt_event_group, CONNECTED_BIT, false, true, portMAX_DELAY) */;
         publish_ota_data(client, OTA_ONGOING);
         char * url=o.url;
         static const char *TAG = "simple_ota_example";

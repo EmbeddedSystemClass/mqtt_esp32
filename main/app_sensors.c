@@ -26,7 +26,7 @@ extern float wtemperature;
 extern int16_t temperature;
 extern int16_t humidity;
 
-static const char *TAG = "MQTTS_DHT22";
+static const char *TAG = "MQTTS_SENSORS";
 
 
 static const gpio_num_t SENSOR_GPIO = CONFIG_DS18X20_GPIO;
@@ -40,10 +40,9 @@ const gpio_num_t dht_gpio = CONFIG_DHT_GPIO;
 
 
 
-void mqtt_publish_sensor_data(void* pvParameters)
+void mqtt_publish_sensor_data(esp_mqtt_client_handle_t client)
 {
   const char * sensors_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/sensors";
-  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
   ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
   int msg_id;
 
@@ -53,8 +52,12 @@ void mqtt_publish_sensor_data(void* pvParameters)
 
   xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
   msg_id = esp_mqtt_client_publish(client, sensors_topic, data,strlen(data), 1, 0);
-  ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
-  xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
+  if (msg_id > 0) {
+    ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
+    xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
+  } else {
+    ESP_LOGI(TAG, "failed to publish temp, msg_id=%d", msg_id);
+  }
 }
 
 
@@ -64,6 +67,7 @@ void sensors_read(void* pvParameters)
   ds18x20_addr_t addrs[MAX_SENSORS];
   float temps[MAX_SENSORS];
   int sensor_count;
+  esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
 
   while (1)
     {
@@ -100,8 +104,8 @@ void sensors_read(void* pvParameters)
           wtemperature = temp_c;
         }
       if (wtemperature > -1) {
-        mqtt_publish_sensor_data(pvParameters);
-        update_thermostat();
+        update_thermostat(client);
+        mqtt_publish_sensor_data(client);
       }
       //vTaskDelay(60000 / portTICK_PERIOD_MS);
       vTaskDelay(10000 / portTICK_PERIOD_MS);
