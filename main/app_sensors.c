@@ -107,7 +107,7 @@ void sensors_read(void* pvParameters)
         update_thermostat(client);
         mqtt_publish_sensor_data(client);
       }
-      //vTaskDelay(60000 / portTICK_PERIOD_MS);
-      vTaskDelay(10000 / portTICK_PERIOD_MS);
+      vTaskDelay(60000 / portTICK_PERIOD_MS);
+      //vTaskDelay(10000 / portTICK_PERIOD_MS);
     }
 }
