@@ -14,6 +14,7 @@
 
 #include "cJSON.h"
 
+#include "app_esp32.h"
 #include "app_ota.h"
 
 static const char *TAG = "MQTTS_OTA";
@@ -23,7 +24,7 @@ extern QueueHandle_t otaQueue;
 extern EventGroupHandle_t mqtt_event_group;
 extern const int CONNECTED_BIT;
 extern const int PUBLISHED_BIT;
-
+extern const int INIT_FINISHED_BIT;
 
 /* #define BUFFSIZE 1024 */
 /* #define HASH_LEN 32 /\* SHA-256 digest length *\/ */
@@ -153,21 +154,27 @@ extern const int PUBLISHED_BIT;
 
 void publish_ota_data(esp_mqtt_client_handle_t client, int status)
 {
+  if (xEventGroupGetBits(mqtt_event_group) & INIT_FINISHED_BIT)
+    {
+      const char * connect_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/ota";
+      char data[256];
+      memset(data,0,256);
 
-  const char * connect_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/ota";
-  char data[256];
-  memset(data,0,256);
-
-  sprintf(data, "{\"status\":%d}", status);
-  xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
-  int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 1, 0);
-  if (msg_id > 0) {
-    ESP_LOGI(TAG, "sent publish ota data successful, msg_id=%d", msg_id);
-    xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
-  } else {
-    ESP_LOGI(TAG, "failed to publish ota data, msg_id=%d", msg_id);
-  }
-
+      sprintf(data, "{\"status\":%d}", status);
+      xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
+      int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 1, 0);
+      if (msg_id > 0) {
+        ESP_LOGI(TAG, "sent publish ota data successful, msg_id=%d", msg_id);
+        EventBits_t bits = xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, MQTT_FLAG_TIMEOUT);
+        if (bits & PUBLISHED_BIT) {
+          ESP_LOGI(TAG, "publish ack received, msg_id=%d", msg_id);
+        } else {
+          ESP_LOGW(TAG, "publish ack not received, msg_id=%d", msg_id);
+        }
+      } else {
+        ESP_LOGI(TAG, "failed to publish ota data, msg_id=%d", msg_id);
+      }
+    }
 }
 
 
@@ -199,17 +206,10 @@ esp_err_t _http_event_handler(esp_http_client_event_t *evt)
   return ESP_OK;
 }
 
-
-#define OTA_FAILED -1
-#define OTA_SUCCESFULL 0
-#define OTA_ONGOING 1
-#define OTA_READY 2
-
 void handle_ota_update_task(void* pvParameters)
 {
 
   esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
-  publish_ota_data(client, OTA_READY);
   struct OtaMessage o;
   while(1) {
     if( xQueueReceive( otaQueue, &o , portMAX_DELAY) )

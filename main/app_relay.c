@@ -12,7 +12,7 @@
 
 extern EventGroupHandle_t mqtt_event_group;
 extern const int PUBLISHED_BIT;
-
+extern const int INIT_FINISHED_BIT;
 const int relayBase = CONFIG_RELAYS_BASE;
 const int relaysNb = CONFIG_RELAYS_NB;
 static int relayStatus[MAX_RELAYS];
@@ -32,30 +32,36 @@ void relays_init()
 
 void publish_relay_data(esp_mqtt_client_handle_t client)
 {
-
-  const char * relays_topic = CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/evt/relays";
-  char data[256];
-  char relayData[32];
-  memset(data,0,256);
-  strcat(data, "{");
-  for(int i = 0; i < relaysNb; i++) {
-    sprintf(relayData, "\"relay%dState\":%d", i, relayStatus[i] == ON);
-    if (i != (relaysNb-1)) {
-      strcat(relayData, ",");
-    }
-    strcat(data, relayData);
-  }
-  strcat(data, "}");
+  if (xEventGroupGetBits(mqtt_event_group) & INIT_FINISHED_BIT)
+    {
+      const char * relays_topic = CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/evt/relays";
+      char data[256];
+      char relayData[32];
+      memset(data,0,256);
+      strcat(data, "{");
+      for(int i = 0; i < relaysNb; i++) {
+        sprintf(relayData, "\"relay%dState\":%d", i, relayStatus[i] == ON);
+        if (i != (relaysNb-1)) {
+          strcat(relayData, ",");
+        }
+        strcat(data, relayData);
+      }
+      strcat(data, "}");
   
-  xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
-  int msg_id = esp_mqtt_client_publish(client, relays_topic, data,strlen(data), 1, 0);
-  if (msg_id > 0) {
-    ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
-    xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
-  } else {
-    ESP_LOGI(TAG, "failed to publish relay, msg_id=%d", msg_id);
-  }
-
+      xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
+      int msg_id = esp_mqtt_client_publish(client, relays_topic, data,strlen(data), 1, 0);
+      if (msg_id > 0) {
+        ESP_LOGI(TAG, "sent publish relay successful, msg_id=%d", msg_id);
+        EventBits_t bits = xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, MQTT_FLAG_TIMEOUT);
+        if (bits & PUBLISHED_BIT) {
+          ESP_LOGI(TAG, "publish ack received, msg_id=%d", msg_id);
+        } else {
+          ESP_LOGW(TAG, "publish ack not received, msg_id=%d", msg_id);
+        }
+      } else {
+        ESP_LOGI(TAG, "failed to publish relay, msg_id=%d", msg_id);
+      }
+    }
 }
 
 void update_relay_state(int id, char value)

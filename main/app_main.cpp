@@ -40,7 +40,13 @@ extern "C" const int DHT22 = BIT0;
 extern "C" const int DS = BIT1;
 
 
-float wtemperature = 0;
+QueueHandle_t relayQueue;
+QueueHandle_t otaQueue;
+QueueHandle_t thermostatQueue;
+QueueHandle_t mqttQueue;
+
+float wtemperature = -1;
+float ctemperature = -1;
 
 int16_t temperature = 0;
 int16_t humidity = 0;
@@ -49,7 +55,6 @@ int16_t humidity = 0;
 int16_t connect_reason;
 const int boot = 0;
 extern "C" const int mqtt_disconnect = 1;
-
 
 #define BLINK_GPIO GPIO_NUM_27
 void blink_task(void *pvParameter)
@@ -150,6 +155,12 @@ extern "C" void app_main()
   sensors_event_group = xEventGroupCreate();
   wifi_event_group = xEventGroupCreate();
 
+  thermostatQueue = xQueueCreate(1, sizeof(struct ThermostatMessage) );
+  relayQueue = xQueueCreate(1, sizeof(struct RelayMessage) );
+  otaQueue = xQueueCreate(1, sizeof(struct OtaMessage) );
+  mqttQueue = xQueueCreate(1, sizeof(void *) );
+
+
   xTaskCreate(blink_task, "blink_task", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -163,18 +174,18 @@ extern "C" void app_main()
   err=read_thermostat_nvs();
   ESP_ERROR_CHECK( err );
 
-  wifi_init();
   esp_mqtt_client_handle_t client = mqtt_init();
-  xTaskCreate(handle_mqtt_sub_pub, "handle_mqtt_sub_pub", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
-  xEventGroupWaitBits(mqtt_event_group, INIT_FINISHED_BIT, false, true, portMAX_DELAY);
-
-
 
   xTaskCreate(sensors_read, "sensors_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
 
   xTaskCreate(handle_relay_cmd_task, "handle_relay_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
   xTaskCreate(handle_ota_update_task, "handle_ota_update_task", configMINIMAL_STACK_SIZE * 7, (void *)client, 5, NULL);
   xTaskCreate(handle_thermostat_cmd_task, "handle_relay_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+  xTaskCreate(handle_mqtt_sub_pub, "handle_mqtt_sub_pub", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+
+  wifi_init();
+
+  mqtt_start(client);
 
 
   //xTaskCreate(tft_handler, "tft_handler", configMINIMAL_STACK_SIZE * 3, NULL, 7, NULL);

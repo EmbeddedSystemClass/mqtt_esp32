@@ -6,11 +6,12 @@
 
 
 
+#include "app_esp32.h"
 #include "app_mqtt.h"
 #include "app_thermostat.h"
 extern EventGroupHandle_t mqtt_event_group;
 extern const int PUBLISHED_BIT;
-
+extern const int INIT_FINISHED_BIT;
 #include "app_sensors.h"
 
 #include <ds18x20.h>
@@ -21,7 +22,8 @@ extern EventGroupHandle_t sensors_event_group;
 extern const int DHT22;
 extern const int DS;
 
-extern float wtemperature;
+extern float wtemperature; //hot water
+extern float ctemperature; //circuit water
 
 extern int16_t temperature;
 extern int16_t humidity;
@@ -42,24 +44,31 @@ const gpio_num_t dht_gpio = CONFIG_DHT_GPIO;
 
 void mqtt_publish_sensor_data(esp_mqtt_client_handle_t client)
 {
-  const char * sensors_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/sensors";
-  ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
-  int msg_id;
+    if (xEventGroupGetBits(mqtt_event_group) & INIT_FINISHED_BIT)
+    {
+      const char * sensors_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/sensors";
+      ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
+      int msg_id;
 
-  char data[256];
-  memset(data,0,256);
-  sprintf(data, "{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f, \"wtemperature\":%.1f}",esp_timer_get_time(),humidity / 10., temperature / 10., wtemperature);
+      char data[256];
+      memset(data,0,256);
+      sprintf(data, "{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f, \"wtemperature\":%.1f, \"ctemperature\":%.1f}",esp_timer_get_time(),humidity / 10., temperature / 10., wtemperature, ctemperature);
 
-  xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
-  msg_id = esp_mqtt_client_publish(client, sensors_topic, data,strlen(data), 1, 0);
-  if (msg_id > 0) {
-    ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
-    xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
-  } else {
-    ESP_LOGI(TAG, "failed to publish temp, msg_id=%d", msg_id);
-  }
+      xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
+      msg_id = esp_mqtt_client_publish(client, sensors_topic, data,strlen(data), 1, 0);
+      if (msg_id > 0) {
+        ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
+        EventBits_t bits = xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, MQTT_FLAG_TIMEOUT);
+        if (bits & PUBLISHED_BIT) {
+          ESP_LOGI(TAG, "publish ack received, msg_id=%d", msg_id);
+        } else {
+          ESP_LOGW(TAG, "publish ack not received, msg_id=%d", msg_id);
+        }
+      } else {
+        ESP_LOGI(TAG, "failed to publish temp, msg_id=%d", msg_id);
+      }
+    }
 }
-
 
 void sensors_read(void* pvParameters)
 {
@@ -83,10 +92,11 @@ void sensors_read(void* pvParameters)
 
       sensor_count = ds18x20_scan_devices(SENSOR_GPIO, addrs, MAX_SENSORS);
 
+      wtemperature=-1;
+      ctemperature=-1;
       if (sensor_count < 1)
         {
           ESP_LOGW(TAG, "No sensors detected!\n");
-          wtemperature=-1;
         }
 
       ds18x20_measure_and_read_multi(SENSOR_GPIO, addrs, sensor_count, temps);
@@ -101,7 +111,12 @@ void sensors_read(void* pvParameters)
           float temp_c = temps[j];
           float temp_f = (temp_c * 1.8) + 32;
           ESP_LOGI(TAG,"  Sensor %08x%08x reports %f deg C (%f deg F)\n", addr0, addr1, temp_c, temp_f);
-          wtemperature = temp_c;
+          if (0x48020692 == addr0 && 0x45473e28 == addr1) {
+            wtemperature = temp_c;
+          }
+          else {
+            ctemperature = temp_c;
+          }
         }
       if (wtemperature > -1) {
         update_thermostat(client);

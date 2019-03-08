@@ -4,6 +4,7 @@
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
 
+#include "app_esp32.h"
 #include "app_relay.h"
 #include "app_ota.h"
 #include "app_thermostat.h"
@@ -24,10 +25,10 @@ extern int16_t connect_reason;
 extern const int mqtt_disconnect;
 #define FW_VERSION "0.02.05"
 
-QueueHandle_t relayQueue;
-QueueHandle_t otaQueue;
-QueueHandle_t thermostatQueue;
-QueueHandle_t mqttQueue;
+extern QueueHandle_t relayQueue;
+extern QueueHandle_t otaQueue;
+extern QueueHandle_t thermostatQueue;
+extern QueueHandle_t mqttQueue;
 
 static const char *TAG = "MQTTS_MQTTS";
 
@@ -118,20 +119,27 @@ void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
 
 void publish_connected_data(esp_mqtt_client_handle_t client)
 {
+  if (xEventGroupGetBits(mqtt_event_group) & INIT_FINISHED_BIT)
+    {
+      const char * connect_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/connected";
+      char data[256];
+      memset(data,0,256);
 
-  const char * connect_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/connected";
-  char data[256];
-  memset(data,0,256);
-
-  sprintf(data, "{\"v\":\"" FW_VERSION "\", \"r\":%d}", connect_reason);
-  xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
-  int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 1, 0);
-  if (msg_id > 0) {
-    ESP_LOGI(TAG, "sent publish connected data successful, msg_id=%d", msg_id);
-    xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
-  } else {
-    ESP_LOGI(TAG, "failed to publish connected data, msg_id=%d", msg_id);
-  }
+      sprintf(data, "{\"v\":\"" FW_VERSION "\", \"r\":%d}", connect_reason);
+      xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
+      int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 1, 0);
+      if (msg_id > 0) {
+        ESP_LOGI(TAG, "sent publish connected data successful, msg_id=%d", msg_id);
+        EventBits_t bits = xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, MQTT_FLAG_TIMEOUT);
+        if (bits & PUBLISHED_BIT) {
+          ESP_LOGI(TAG, "publish ack received, msg_id=%d", msg_id);
+        } else {
+          ESP_LOGW(TAG, "publish ack not received, msg_id=%d", msg_id);
+        }
+      } else {
+        ESP_LOGW(TAG, "failed to publish connected data, msg_id=%d", msg_id);
+      }
+    }
 }
 
 
@@ -179,17 +187,6 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
   return ESP_OK;
 }
 
-
-
-static esp_mqtt_client_handle_t mqtt_app_init_start(const esp_mqtt_client_config_t* mqtt_cfg)
-{
-  ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
-  esp_mqtt_client_handle_t client = esp_mqtt_client_init(mqtt_cfg);
-  esp_mqtt_client_start(client);
-  xEventGroupWaitBits(mqtt_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
-  return client;
-}
-
 static void mqtt_subscribe(esp_mqtt_client_handle_t client)
 {
   int msg_id;
@@ -197,8 +194,17 @@ static void mqtt_subscribe(esp_mqtt_client_handle_t client)
   for (int i = 0; i < MAX_SUB; i++) {
     xEventGroupClearBits(mqtt_event_group, SUBSCRIBED_BIT);
     msg_id = esp_mqtt_client_subscribe(client, SUBSCRIPTIONS[i], 0);
-    ESP_LOGI(TAG, "sent subscribe %s successful, msg_id=%d", SUBSCRIPTIONS[i], msg_id);
-    xEventGroupWaitBits(mqtt_event_group, SUBSCRIBED_BIT, false, true, portMAX_DELAY);
+    if (msg_id > 0) {
+      ESP_LOGI(TAG, "sent subscribe %s successful, msg_id=%d", SUBSCRIPTIONS[i], msg_id);
+        EventBits_t bits = xEventGroupWaitBits(mqtt_event_group, SUBSCRIBED_BIT, false, true, MQTT_FLAG_TIMEOUT);
+        if (bits & SUBSCRIBED_BIT) {
+          ESP_LOGI(TAG, "subscribe ack received, msg_id=%d", msg_id);
+        } else {
+          ESP_LOGW(TAG, "subscribe ack not received, msg_id=%d", msg_id);
+        }
+    } else {
+      ESP_LOGI(TAG, "failed to subscribe %s, msg_id=%d", SUBSCRIPTIONS[i], msg_id);
+    }
   }
 }
 
@@ -210,18 +216,20 @@ esp_mqtt_client_handle_t mqtt_init()
     .cert_pem = (const char *)mqtt_iot_cipex_ro_pem_start,
     .client_id = CONFIG_MQTT_CLIENT_ID,
     .lwt_topic = CONFIG_MQTT_DEVICE_TYPE"/"CONFIG_MQTT_CLIENT_ID"/evt/disconnected",
-    .keepalive = 60
+    .keepalive = MQTT_TIMEOUT
   };
 
-  thermostatQueue = xQueueCreate(1, sizeof(struct ThermostatMessage) );
-  relayQueue = xQueueCreate(1, sizeof(struct RelayMessage) );
-  otaQueue = xQueueCreate(1, sizeof(struct OtaMessage) );
-  mqttQueue = xQueueCreate(1, sizeof(void *) );
-  esp_mqtt_client_handle_t client = mqtt_app_init_start(&mqtt_cfg);
+  ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
+  esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
   return client;
 }
 
 
+void mqtt_start(esp_mqtt_client_handle_t client)
+{
+  esp_mqtt_client_start(client);
+  xEventGroupWaitBits(mqtt_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
+}
 
 void handle_mqtt_sub_pub(void* pvParameters)
 {
@@ -232,10 +240,12 @@ void handle_mqtt_sub_pub(void* pvParameters)
       {
         xEventGroupClearBits(mqtt_event_group, INIT_FINISHED_BIT);
         mqtt_subscribe(client);
+        xEventGroupSetBits(mqtt_event_group, INIT_FINISHED_BIT);
         publish_connected_data(client);
         publish_relay_data(client);
         publish_thermostat_data(client);
-        xEventGroupSetBits(mqtt_event_group, INIT_FINISHED_BIT);
+        publish_ota_data(client, OTA_READY);
+
       }
   }
 }

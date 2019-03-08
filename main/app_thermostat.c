@@ -6,6 +6,7 @@
 
 #include "nvs.h"
 
+#include "app_esp32.h"
 #include "app_relay.h"
 #include "app_thermostat.h"
 
@@ -18,7 +19,7 @@ int targetTemperatureSensibility=5; //0.5 degrees
 extern float wtemperature;
 extern EventGroupHandle_t mqtt_event_group;
 extern const int PUBLISHED_BIT;
-
+extern const int INIT_FINISHED_BIT;
 extern QueueHandle_t thermostatQueue;
 
 
@@ -26,21 +27,27 @@ static const char *TAG = "APP_THERMOSTAT";
 
 void publish_thermostat_data(esp_mqtt_client_handle_t client)
 {
+  if (xEventGroupGetBits(mqtt_event_group) & INIT_FINISHED_BIT)
+    {
+      const char * connect_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/thermostat";
+      char data[256];
+      memset(data,0,256);
 
-  const char * connect_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/thermostat";
-  char data[256];
-  memset(data,0,256);
-
-  sprintf(data, "{\"targetTemperature\":%02f}", targetTemperature/10.);
-  xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
-  int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 1, 0);
-  if (msg_id > 0) {
-    ESP_LOGI(TAG, "sent publish thermostat data successful, msg_id=%d", msg_id);
-    xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, portMAX_DELAY);
-  } else {
-    ESP_LOGI(TAG, "failed to publish thermostat, msg_id=%d", msg_id);
-  }
-
+      sprintf(data, "{\"targetTemperature\":%02f}", targetTemperature/10.);
+      xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
+      int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 1, 0);
+      if (msg_id > 0) {
+        ESP_LOGI(TAG, "sent publish thermostat data successful, msg_id=%d", msg_id);
+        EventBits_t bits = xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, MQTT_FLAG_TIMEOUT);
+        if (bits & PUBLISHED_BIT) {
+          ESP_LOGI(TAG, "publish ack received, msg_id=%d", msg_id);
+        } else {
+          ESP_LOGW(TAG, "publish ack not received, msg_id=%d", msg_id);
+        }
+      } else {
+        ESP_LOGI(TAG, "failed to publish thermostat, msg_id=%d", msg_id);
+      }
+    }
 }
 
 esp_err_t write_thermostat_nvs()
