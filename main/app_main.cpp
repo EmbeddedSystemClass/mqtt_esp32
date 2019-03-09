@@ -45,8 +45,8 @@ QueueHandle_t otaQueue;
 QueueHandle_t thermostatQueue;
 QueueHandle_t mqttQueue;
 
-float wtemperature = -1;
-float ctemperature = -1;
+float wtemperature = 0;
+float ctemperature = 0;
 
 int16_t temperature = 0;
 int16_t humidity = 0;

@@ -117,10 +117,11 @@ void update_thermostat(esp_mqtt_client_handle_t client)
   ESP_LOGI(TAG, "wtemperature is %f", wtemperature);
   ESP_LOGI(TAG, "targetTemperature is %d", targetTemperature);
   ESP_LOGI(TAG, "targetTemperatureSensibility is %d", targetTemperatureSensibility);
-  if ( wtemperature == -1 )
+  if ( wtemperature == 0 )
     {
-      ESP_LOGI(TAG, "sensor is not reporting, stop heating as we are blind");
+      ESP_LOGI(TAG, "sensor is not reporting, no thermostat handling");
       if (heatEnabled==true) {
+        ESP_LOGI(TAG, "stop heating as sensor is not reporting");
         heatEnabled=false;
         updateHeatingState(heatEnabled);
         publish_relay_data(client);

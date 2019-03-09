@@ -4,18 +4,17 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 
-
+#include <ds18x20.h>
+#include <dht.h>
 
 #include "app_esp32.h"
 #include "app_mqtt.h"
 #include "app_thermostat.h"
+#include "app_sensors.h"
+
 extern EventGroupHandle_t mqtt_event_group;
 extern const int PUBLISHED_BIT;
 extern const int INIT_FINISHED_BIT;
-#include "app_sensors.h"
-
-#include <ds18x20.h>
-#include <dht.h>
 
 
 extern EventGroupHandle_t sensors_event_group;
@@ -48,14 +47,13 @@ void mqtt_publish_sensor_data(esp_mqtt_client_handle_t client)
     {
       const char * sensors_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/sensors";
       ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
-      int msg_id;
 
       char data[256];
       memset(data,0,256);
       sprintf(data, "{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f, \"wtemperature\":%.1f, \"ctemperature\":%.1f}",esp_timer_get_time(),humidity / 10., temperature / 10., wtemperature, ctemperature);
 
       xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
-      msg_id = esp_mqtt_client_publish(client, sensors_topic, data,strlen(data), 1, 0);
+      int msg_id = esp_mqtt_client_publish(client, sensors_topic, data,strlen(data), 1, 0);
       if (msg_id > 0) {
         ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
         EventBits_t bits = xEventGroupWaitBits(mqtt_event_group, PUBLISHED_BIT, false, true, MQTT_FLAG_TIMEOUT);
@@ -67,6 +65,9 @@ void mqtt_publish_sensor_data(esp_mqtt_client_handle_t client)
       } else {
         ESP_LOGI(TAG, "failed to publish temp, msg_id=%d", msg_id);
       }
+    } else {
+      ESP_LOGW(TAG, "skip publish sensor data as mqtt init not finished");
+
     }
 }
 
@@ -92,8 +93,8 @@ void sensors_read(void* pvParameters)
 
       sensor_count = ds18x20_scan_devices(SENSOR_GPIO, addrs, MAX_SENSORS);
 
-      wtemperature=-1;
-      ctemperature=-1;
+      wtemperature=0;
+      ctemperature=0;
       if (sensor_count < 1)
         {
           ESP_LOGW(TAG, "No sensors detected!\n");
@@ -118,11 +119,9 @@ void sensors_read(void* pvParameters)
             ctemperature = temp_c;
           }
         }
-      if (wtemperature > -1) {
         update_thermostat(client);
         mqtt_publish_sensor_data(client);
-      }
-      vTaskDelay(60000 / portTICK_PERIOD_MS);
+        vTaskDelay(60000 / portTICK_PERIOD_MS);
       //vTaskDelay(10000 / portTICK_PERIOD_MS);
     }
 }
