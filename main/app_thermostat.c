@@ -16,6 +16,9 @@ bool heatEnabled = false;
 int targetTemperature=23*10; //30 degrees
 int targetTemperatureSensibility=5; //0.5 degrees
 
+const char * targetTemperatureTAG="targetTemp";
+const char * targetTemperatureSensibilityTAG="tgtTempSens";
+
 extern float wtemperature;
 extern EventGroupHandle_t mqtt_event_group;
 extern const int PUBLISHED_BIT;
@@ -33,7 +36,7 @@ void publish_thermostat_data(esp_mqtt_client_handle_t client)
       char data[256];
       memset(data,0,256);
 
-      sprintf(data, "{\"targetTemperature\":%02f}", targetTemperature/10.);
+      sprintf(data, "{\"targetTemperature\":%02f, \"targetTemperatureSensibility\":%02f}", targetTemperature/10., targetTemperatureSensibility/10.);
       xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
       int msg_id = esp_mqtt_client_publish(client, connect_topic, data,strlen(data), 1, 0);
       if (msg_id > 0) {
@@ -50,7 +53,7 @@ void publish_thermostat_data(esp_mqtt_client_handle_t client)
     }
 }
 
-esp_err_t write_thermostat_nvs()
+esp_err_t write_thermostat_nvs(const char * tag, int value)
 {
   nvs_handle my_handle;
   esp_err_t err = nvs_open("storage", NVS_READWRITE, &my_handle);
@@ -58,30 +61,36 @@ esp_err_t write_thermostat_nvs()
     printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
   } else {
     printf("Done\n");
-    printf("Updating targetTemperature in NVS ... ");
-    err = nvs_set_i32(my_handle, "targetTemp", targetTemperature);
+    printf("Updating %s in NVS ... ", tag);
+    err = nvs_set_i32(my_handle, tag, value);
     printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+    printf("Committing updates in NVS ... ");
+    err = nvs_commit(my_handle);
+    printf((err != ESP_OK) ? "Failed!\n" : "Done\n");
+
+    // Close
+    nvs_close(my_handle);
   }
   return err;
 }
 
-esp_err_t read_thermostat_nvs()
+esp_err_t read_thermostat_nvs(const char * tag, int * value)
 {
   printf("Opening Non-Volatile Storage (NVS) handle... ");
   nvs_handle my_handle;
-  esp_err_t err = nvs_open("storage", NVS_READWRITE, &my_handle);
+  esp_err_t err = nvs_open("storage", NVS_READONLY, &my_handle);
   if (err != ESP_OK) {
     printf("Error (%s) opening NVS handle!\n", esp_err_to_name(err));
   } else {
     printf("Done\n");
 
     // Read
-    printf("Reading targetTemperature from NVS ... ");
-    err = nvs_get_i32(my_handle, "targetTemp", &targetTemperature);
+    printf("Reading %s from NVS ... ", tag);
+    err = nvs_get_i32(my_handle, tag, value);
     switch (err) {
     case ESP_OK:
       printf("Done\n");
-      printf("targetTemperature = %d\n", targetTemperature);
+      printf("%s = %d\n", tag, *value);
       break;
     case ESP_ERR_NVS_NOT_FOUND:
       printf("The value is not initialized yet!\n");
@@ -91,6 +100,8 @@ esp_err_t read_thermostat_nvs()
       printf("Error (%s) reading!\n", esp_err_to_name(err));
     }
   }
+  // Close
+  nvs_close(my_handle);
 
   return err;
 }
@@ -155,9 +166,15 @@ void handle_thermostat_cmd_task(void* pvParameters)
   while(1) {
     if( xQueueReceive( thermostatQueue, &t , portMAX_DELAY) )
       {
-        if (targetTemperature != t.targetTemperature * 10) {
+        if (t.targetTemperature && targetTemperature != t.targetTemperature * 10) {
           targetTemperature=t.targetTemperature*10;
-          esp_err_t err = write_thermostat_nvs();
+          esp_err_t err = write_thermostat_nvs(targetTemperatureTAG, targetTemperature);
+          ESP_ERROR_CHECK( err );
+          update_thermostat(client);
+        }
+        if (t.targetTemperatureSensibility && targetTemperatureSensibility != t.targetTemperatureSensibility * 10) {
+          targetTemperatureSensibility=t.targetTemperatureSensibility*10;
+          esp_err_t err = write_thermostat_nvs(targetTemperatureSensibilityTAG, targetTemperatureSensibility);
           ESP_ERROR_CHECK( err );
           update_thermostat(client);
         }

@@ -51,6 +51,11 @@ float ctemperature = 0;
 int16_t temperature = 0;
 int16_t humidity = 0;
 
+extern int targetTemperature;
+extern int targetTemperatureSensibility;
+extern const char * targetTemperatureTAG;
+extern const char * targetTemperatureSensibilityTAG;
+
 
 int16_t connect_reason;
 const int boot = 0;
@@ -171,7 +176,8 @@ extern "C" void app_main()
   }
   ESP_ERROR_CHECK( err );
 
-  err=read_thermostat_nvs();
+  err=read_thermostat_nvs(targetTemperatureTAG, &targetTemperature);
+  err=read_thermostat_nvs(targetTemperatureSensibilityTAG, &targetTemperatureSensibility);
   ESP_ERROR_CHECK( err );
 
   esp_mqtt_client_handle_t client = mqtt_init();

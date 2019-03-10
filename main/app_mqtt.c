@@ -105,15 +105,28 @@ void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
     memcpy(tmpBuf, event->data, event->data_len);
     tmpBuf[event->data_len] = 0;
     cJSON * root   = cJSON_Parse(tmpBuf);
-    float targetTemperature = cJSON_GetObjectItem(root,"targetTemperature")->valuedouble;
-    printf("targetTemperature: %f\r\n", targetTemperature);
-    struct ThermostatMessage t={targetTemperature};
-    if (xQueueSend( thermostatQueue
-                    ,( void * )&t
-                    ,portMAX_DELAY) != pdPASS) {
-      ESP_LOGE(TAG, "Cannot send to thermostatQueue");
+    if (root) {
+      cJSON * ttObject = cJSON_GetObjectItem(root,"targetTemperature");
+      cJSON * ttsObject = cJSON_GetObjectItem(root,"targetTemperatureSensibility");
+      struct ThermostatMessage t = {0,0};
+      if (ttObject) {
+        float targetTemperature = ttObject->valuedouble;
+        ESP_LOGI(TAG, "targetTemperature: %f", targetTemperature);
+        t.targetTemperature = targetTemperature;
+      }
+      if (ttsObject) {
+        float targetTemperatureSensibility = ttsObject->valuedouble;
+        ESP_LOGI(TAG, "targetTemperatureSensibility: %f", targetTemperatureSensibility);
+        t.targetTemperatureSensibility = targetTemperatureSensibility;
+      }
+      if (t.targetTemperature || t.targetTemperatureSensibility) {
+        if (xQueueSend( thermostatQueue
+                        ,( void * )&t
+                        ,portMAX_DELAY) != pdPASS) {
+          ESP_LOGE(TAG, "Cannot send to thermostatQueue");
+        }
+      }
     }
-
   }
 }
 

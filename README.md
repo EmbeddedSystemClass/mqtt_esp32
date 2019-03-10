@@ -39,13 +39,11 @@ on MQTT_EVENT_CONNECTED:
    * done temp, sensibility to be added
  * subscribe to variable change and save to nvram
     * together with above
- * rewrite relays from esp8266 (or even better, as we need separate command for each)
- * connect thermostat with relay0 and disable relay0 button/cmd/subscription
- * mount the box
- * mount in garage with sensors on the right places
-* rewrite ota using native method and check for error 76 or size and retry
+ * rewrite ota using native method and check for error 76 or size and retry
  * remove unused code/flags/etc.
  * implement/check thermostat code
+ * disable ota while heating??
+
 
  * sonoff basic
    * glue serial
