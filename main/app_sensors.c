@@ -16,11 +16,6 @@ extern EventGroupHandle_t mqtt_event_group;
 extern const int PUBLISHED_BIT;
 extern const int INIT_FINISHED_BIT;
 
-
-extern EventGroupHandle_t sensors_event_group;
-extern const int DHT22;
-extern const int DS;
-
 extern float wtemperature; //hot water
 extern float ctemperature; //circuit water
 
@@ -41,7 +36,7 @@ const gpio_num_t dht_gpio = CONFIG_DHT_GPIO;
 
 
 
-void mqtt_publish_sensor_data(esp_mqtt_client_handle_t client)
+void publish_sensor_data(esp_mqtt_client_handle_t client)
 {
     if (xEventGroupGetBits(mqtt_event_group) & INIT_FINISHED_BIT)
     {
@@ -120,7 +115,7 @@ void sensors_read(void* pvParameters)
           }
         }
         update_thermostat(client);
-        mqtt_publish_sensor_data(client);
+        publish_sensor_data(client);
         vTaskDelay(60000 / portTICK_PERIOD_MS);
       //vTaskDelay(10000 / portTICK_PERIOD_MS);
     }

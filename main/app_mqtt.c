@@ -7,6 +7,7 @@
 #include "app_esp32.h"
 #include "app_relay.h"
 #include "app_ota.h"
+#include "app_sensors.h"
 #include "app_thermostat.h"
 #include "app_mqtt.h"
 
@@ -19,6 +20,8 @@ extern const int CONNECTED_BIT;
 extern const int SUBSCRIBED_BIT;
 extern const int PUBLISHED_BIT;
 extern const int INIT_FINISHED_BIT;
+
+int16_t mqtt_reconnect_counter;
 
 
 extern int16_t connect_reason;
@@ -81,7 +84,7 @@ void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
     struct RelayMessage r={id, value};
     if (xQueueSend( relayQueue
                     ,( void * )&r
-                    ,portMAX_DELAY) != pdPASS) {
+                    ,MQTT_QUEUE_TIMEOUT) != pdPASS) {
       ESP_LOGE(TAG, "Cannot send to relayQueue");
     }
   }
@@ -89,7 +92,7 @@ void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
     struct OtaMessage o={"https://sw.iot.cipex.ro:8911/" CONFIG_MQTT_CLIENT_ID ".bin"};
     if (xQueueSend( otaQueue
                     ,( void * )&o
-                    ,portMAX_DELAY) != pdPASS) {
+                    ,MQTT_QUEUE_TIMEOUT) != pdPASS) {
       ESP_LOGE(TAG, "Cannot send to relayQueue");
 
     }
@@ -122,7 +125,7 @@ void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
       if (t.targetTemperature || t.targetTemperatureSensibility) {
         if (xQueueSend( thermostatQueue
                         ,( void * )&t
-                        ,portMAX_DELAY) != pdPASS) {
+                        ,MQTT_QUEUE_TIMEOUT) != pdPASS) {
           ESP_LOGE(TAG, "Cannot send to thermostatQueue");
         }
       }
@@ -164,16 +167,24 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
     void * unused;
     if (xQueueSend( mqttQueue
                     ,( void * )&unused
-                    ,portMAX_DELAY) != pdPASS) {
+                    ,MQTT_QUEUE_TIMEOUT) != pdPASS) {
       ESP_LOGE(TAG, "Cannot send to relayQueue");
     }
     ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
+    mqtt_reconnect_counter=0;
     break;
   case MQTT_EVENT_DISCONNECTED:
     ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
     connect_reason=mqtt_disconnect;
-
     xEventGroupClearBits(mqtt_event_group, CONNECTED_BIT | SUBSCRIBED_BIT | PUBLISHED_BIT | INIT_FINISHED_BIT);
+    mqtt_reconnect_counter += 1; //one reconnect each 10 seconds
+    if (mqtt_reconnect_counter  > (10 * 6 * 60)) //1 hour, force ssh reconnect
+      {
+        esp_wifi_stop();
+        vTaskDelay(10000 / portTICK_PERIOD_MS);
+        esp_wifi_start();
+        mqtt_reconnect_counter = 0;
+      }
     break;
 
   case MQTT_EVENT_SUBSCRIBED:
@@ -258,6 +269,7 @@ void handle_mqtt_sub_pub(void* pvParameters)
         publish_relay_data(client);
         publish_thermostat_data(client);
         publish_ota_data(client, OTA_READY);
+        publish_sensor_data(client);
 
       }
   }

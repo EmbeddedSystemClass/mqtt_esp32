@@ -35,14 +35,18 @@ on MQTT_EVENT_CONNECTED:
  * led on after startup, fast-blink after wifi and normal blink after mqtt
  
 ## todo
- * add variable read from nv and publish in connect message (temp + sensibility)
-   * done temp, sensibility to be added
- * subscribe to variable change and save to nvram
-    * together with above
  * rewrite ota using native method and check for error 76 or size and retry
  * remove unused code/flags/etc.
  * implement/check thermostat code
  * disable ota while heating??
+
+## esp8266 
+ * investigate reconect failure
+ * rewrite mqtt handling for most common code between implementations (common topic handlers)
+ * test wifi reconnect
+ * test ota
+ * test /update relay conrol
+ * move to sonoff
 
 
  * sonoff basic

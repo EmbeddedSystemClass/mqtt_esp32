@@ -35,11 +35,6 @@ extern "C" const int SUBSCRIBED_BIT = BIT1;
 extern "C" const int PUBLISHED_BIT = BIT2;
 extern "C" const int INIT_FINISHED_BIT = BIT3;
 
-EventGroupHandle_t sensors_event_group;
-extern "C" const int DHT22 = BIT0;
-extern "C" const int DS = BIT1;
-
-
 QueueHandle_t relayQueue;
 QueueHandle_t otaQueue;
 QueueHandle_t thermostatQueue;
@@ -153,11 +148,9 @@ extern "C" void app_main()
   esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
   esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
 
-
   relays_init();
 
   mqtt_event_group = xEventGroupCreate();
-  sensors_event_group = xEventGroupCreate();
   wifi_event_group = xEventGroupCreate();
 
   thermostatQueue = xQueueCreate(1, sizeof(struct ThermostatMessage) );
@@ -165,8 +158,8 @@ extern "C" void app_main()
   otaQueue = xQueueCreate(1, sizeof(struct OtaMessage) );
   mqttQueue = xQueueCreate(1, sizeof(void *) );
 
-
   xTaskCreate(blink_task, "blink_task", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
+
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
     // NVS partition was truncated and needs to be erased
@@ -186,7 +179,7 @@ extern "C" void app_main()
 
   xTaskCreate(handle_relay_cmd_task, "handle_relay_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
   xTaskCreate(handle_ota_update_task, "handle_ota_update_task", configMINIMAL_STACK_SIZE * 7, (void *)client, 5, NULL);
-  xTaskCreate(handle_thermostat_cmd_task, "handle_relay_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+  xTaskCreate(handle_thermostat_cmd_task, "handle_thermostat_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
   xTaskCreate(handle_mqtt_sub_pub, "handle_mqtt_sub_pub", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
 
   wifi_init();

@@ -1,13 +1,12 @@
 #include "esp_system.h"
+#include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_event_loop.h"
-#include "esp_log.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 
 #include "app_wifi.h"
-
 
 extern EventGroupHandle_t wifi_event_group;
 extern const int CONNECTED_BIT;
@@ -22,11 +21,10 @@ static esp_err_t wifi_event_handler(void *ctx, system_event_t *event)
     break;
   case SYSTEM_EVENT_STA_GOT_IP:
     xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
-
     break;
   case SYSTEM_EVENT_STA_DISCONNECTED:
-    esp_wifi_connect();
     xEventGroupClearBits(wifi_event_group, CONNECTED_BIT);
+    esp_wifi_connect();
     break;
   default:
     break;

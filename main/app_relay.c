@@ -1,9 +1,12 @@
 #include "esp_system.h"
 #include "esp_log.h"
 
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/event_groups.h"
 #include "freertos/queue.h"
+
+
 
 #include "app_esp32.h"
 #include "app_relay.h"
@@ -11,11 +14,14 @@
 #define MAX_RELAYS 4
 
 extern EventGroupHandle_t mqtt_event_group;
-extern const int PUBLISHED_BIT;
 extern const int INIT_FINISHED_BIT;
+extern const int PUBLISHED_BIT;
+
 const int relayBase = CONFIG_RELAYS_BASE;
 const int relaysNb = CONFIG_RELAYS_NB;
 static int relayStatus[MAX_RELAYS];
+
+//FIXME
 
 static const char *TAG = "MQTTS_RELAY";
 
@@ -23,10 +29,17 @@ extern QueueHandle_t relayQueue;
 
 void relays_init()
 {
+  //FIXME
+
+
+
+
+
+
   for(int i = 0; i < relaysNb; i++) {
+    relayStatus[i] = OFF;
     gpio_set_direction( relayBase + i, GPIO_MODE_OUTPUT );
     gpio_set_level(relayBase + i, OFF);
-    relayStatus[i] = OFF;
   }
 }
 
@@ -40,6 +53,7 @@ void publish_relay_data(esp_mqtt_client_handle_t client)
       memset(data,0,256);
       strcat(data, "{");
       for(int i = 0; i < relaysNb; i++) {
+        memset(relayData,0,32);
         sprintf(relayData, "\"relay%dState\":%d", i, relayStatus[i] == ON);
         if (i != (relaysNb-1)) {
           strcat(relayData, ",");
@@ -47,7 +61,7 @@ void publish_relay_data(esp_mqtt_client_handle_t client)
         strcat(data, relayData);
       }
       strcat(data, "}");
-  
+
       xEventGroupClearBits(mqtt_event_group, PUBLISHED_BIT);
       int msg_id = esp_mqtt_client_publish(client, relays_topic, data,strlen(data), 1, 0);
       if (msg_id > 0) {
@@ -76,7 +90,6 @@ void update_relay_state(int id, char value)
     }
     gpio_set_level(relayBase + id, relayStatus[id]);
   }
-
 }
 
 void handle_relay_cmd_task(void* pvParameters)
