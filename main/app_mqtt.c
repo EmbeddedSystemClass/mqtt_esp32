@@ -80,8 +80,7 @@ void dispatch_mqtt_event(esp_mqtt_event_handle_t event)
     tmpBuf[event->data_len] = 0;
     cJSON * root   = cJSON_Parse(tmpBuf);
     char value = cJSON_GetObjectItem(root,"state")->valueint;
-    printf("id: %d\r\n", id);
-    printf("value: %d\r\n", value);
+    ESP_LOGI(TAG, "id: %d, value: %d", id, value);
     struct RelayMessage r={id, value};
     if (xQueueSend( relayQueue
                     ,( void * )&r
@@ -201,8 +200,8 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
     break;
   case MQTT_EVENT_DATA:
     ESP_LOGI(TAG, "MQTT_EVENT_DATA");
-    ESP_LOGI(TAG, "TOPIC=%.*s\r\n", event->topic_len, event->topic);
-    ESP_LOGI(TAG, "DATA=%.*s\r\n", event->data_len, event->data);
+    ESP_LOGI(TAG, "TOPIC=%.*s", event->topic_len, event->topic);
+    ESP_LOGI(TAG, "DATA=%.*s", event->data_len, event->data);
     dispatch_mqtt_event(event);
     break;
   case MQTT_EVENT_ERROR:

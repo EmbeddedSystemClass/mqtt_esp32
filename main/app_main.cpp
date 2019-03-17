@@ -175,7 +175,7 @@ extern "C" void app_main()
 
   esp_mqtt_client_handle_t client = mqtt_init();
 
-  xTaskCreate(sensors_read, "sensors_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
+  xTaskCreate(sensors_read, "sensors_read", configMINIMAL_STACK_SIZE * 5, (void *)client, 10, NULL);
 
   xTaskCreate(handle_relay_cmd_task, "handle_relay_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
   xTaskCreate(handle_ota_update_task, "handle_ota_update_task", configMINIMAL_STACK_SIZE * 7, (void *)client, 5, NULL);
