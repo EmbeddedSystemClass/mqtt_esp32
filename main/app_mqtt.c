@@ -178,7 +178,8 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
     connect_reason=mqtt_disconnect;
     xEventGroupClearBits(mqtt_event_group, CONNECTED_BIT | SUBSCRIBED_BIT | PUBLISHED_BIT | INIT_FINISHED_BIT);
     mqtt_reconnect_counter += 1; //one reconnect each 10 seconds
-    if (mqtt_reconnect_counter  > (10 * 6 * 60)) //1 hour, force ssh reconnect
+    ESP_LOGI(TAG, "mqtt_reconnect_counter: %d", mqtt_reconnect_counter);
+    if (mqtt_reconnect_counter  > (6 * 5)) //5 mins, force wifi reconnect
       {
         esp_wifi_stop();
         vTaskDelay(10000 / portTICK_PERIOD_MS);
