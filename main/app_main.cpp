@@ -65,26 +65,29 @@ void blink_task(void *pvParameter)
      Technical Reference for a list of pads and their default
      functions.)
   */
-
   gpio_pad_select_gpio(BLINK_GPIO);
   /* Set the GPIO as a push/pull output */
   gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
   int interval;
   while(1) {
-    gpio_set_level(BLINK_GPIO, ON);
 
-    xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, false, true, portMAX_DELAY);
     interval=250;
-
-    EventBits_t bits = xEventGroupGetBits(mqtt_event_group);
+    EventBits_t bits = xEventGroupGetBits(wifi_event_group);
     if( ( bits & CONNECTED_BIT ) != 0 ) {
       interval=500;
     }
 
+    gpio_set_level(BLINK_GPIO, ON);
+
+    bits = xEventGroupGetBits(mqtt_event_group);
+    while ( bits & CONNECTED_BIT ) {
+      vTaskDelay(1000 / portTICK_PERIOD_MS);
+    }
     vTaskDelay(interval / portTICK_PERIOD_MS);
     gpio_set_level(BLINK_GPIO, OFF);
     vTaskDelay(interval / portTICK_PERIOD_MS);
   }
+
 }
 
 // void updateHeatingState(bool heatEnabled)
