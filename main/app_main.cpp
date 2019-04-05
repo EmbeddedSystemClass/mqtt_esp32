@@ -1,145 +1,112 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <stddef.h>
-#include <string.h>
 #include "esp_system.h"
+#include "esp_log.h"
 #include "nvs_flash.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "freertos/semphr.h"
 #include "freertos/event_groups.h"
+#include "freertos/queue.h"
 
-#include "esp_log.h"
+#include "driver/gpio.h"
+#include "rom/gpio.h"
 
 extern "C" {
 #include "app_esp32.h"
 
 #include "app_wifi.h"
 #include "app_mqtt.h"
+#include "app_nvs.h"
+}
+#if CONFIG_MQTT_SWITCHES_NB
+extern "C" {
+#include "app_switch.h"
+}
+#endif //CONFIG_MQTT_SWITCHES_NB
 
+#ifdef CONFIG_MQTT_SENSOR
+extern "C" {
 #include "app_sensors.h"
+}
+#endif //CONFIG_MQTT_SENSOR
+extern "C" {
 #include "app_thermostat.h"
+}
+#if CONFIG_MQTT_RELAYS_NB
+extern "C" {
 #include "app_relay.h"
+}
+QueueHandle_t relayQueue;
+#endif//CONFIG_MQTT_RELAYS_NB
+
+#ifdef CONFIG_MQTT_OTA
+extern "C" {
 #include "app_ota.h"
 }
-
-//#include "app_tft.h"
-
-static const char *TAG = "MQTTS_MAIN";
-
-EventGroupHandle_t wifi_event_group;
-EventGroupHandle_t mqtt_event_group;
-extern "C" const int CONNECTED_BIT = BIT0;
-extern "C" const int SUBSCRIBED_BIT = BIT1;
-extern "C" const int PUBLISHED_BIT = BIT2;
-extern "C" const int INIT_FINISHED_BIT = BIT3;
-
-QueueHandle_t relayQueue;
 QueueHandle_t otaQueue;
+#endif //CONFIG_MQTT_OTA
+
+extern "C" {
+#include "app_smart_config.h"
+}
+QueueHandle_t smartconfigQueue;
+
+extern "C" const char * smartconfigTAG;
+extern "C" int smartconfigFlag;
+
+extern "C" int targetTemperature;
+extern "C" int targetTemperatureSensibility;
+extern "C" const char * targetTemperatureTAG;
+extern "C" const char * targetTemperatureSensibilityTAG;
+
+extern "C" EventGroupHandle_t mqtt_event_group;
+extern "C" const int MQTT_CONNECTED_BIT;
+extern "C" EventGroupHandle_t wifi_event_group;
+extern "C" const int WIFI_CONNECTED_BIT;
+
+
 QueueHandle_t thermostatQueue;
 QueueHandle_t mqttQueue;
 
-float wtemperature = 0;
-float ctemperature = 0;
-
-int16_t temperature = 0;
-int16_t humidity = 0;
-
-extern int targetTemperature;
-extern int targetTemperatureSensibility;
-extern const char * targetTemperatureTAG;
-extern const char * targetTemperatureSensibilityTAG;
+static const char *TAG = "MQTT(S?)_MAIN";
 
 
-int16_t connect_reason;
-const int boot = 0;
-extern "C" const int mqtt_disconnect = 1;
-
-#define BLINK_GPIO GPIO_NUM_27
 void blink_task(void *pvParameter)
 {
-  /* Configure the IOMUX register for pad BLINK_GPIO (some pads are
-     muxed to GPIO on reset already, but some default to other
-     functions and need to be switched to GPIO. Consult the
-     Technical Reference for a list of pads and their default
-     functions.)
-  */
-  gpio_pad_select_gpio(BLINK_GPIO);
   /* Set the GPIO as a push/pull output */
-  gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT);
+  /* gpio_config_t io_conf; */
+  /* io_conf.pin_bit_mask = (1ULL << CONFIG_MQTT_STATUS_LED_GPIO); */
+  /* gpio_config(&io_conf); */
+
+  gpio_pad_select_gpio(CONFIG_MQTT_STATUS_LED_GPIO);
+
+  gpio_set_direction((gpio_num_t)CONFIG_MQTT_STATUS_LED_GPIO, GPIO_MODE_OUTPUT);
+
   int interval;
   while(1) {
-
-    interval=250;
-    EventBits_t bits = xEventGroupGetBits(wifi_event_group);
-    if( ( bits & CONNECTED_BIT ) != 0 ) {
-      interval=500;
+    EventBits_t bits;
+    if(smartconfigFlag) {
+      interval=150;
+    } else {
+      interval=250;
+      bits = xEventGroupGetBits(wifi_event_group);
+      if( ( bits & WIFI_CONNECTED_BIT ) != 0 ) {
+        interval=500;
+      }
     }
-
-    gpio_set_level(BLINK_GPIO, ON);
+    gpio_set_level((gpio_num_t)CONFIG_MQTT_STATUS_LED_GPIO, LED_ON);
 
     bits = xEventGroupGetBits(mqtt_event_group);
-    while ( bits & CONNECTED_BIT ) {
+    while ( bits & MQTT_CONNECTED_BIT ) {
       vTaskDelay(1000 / portTICK_PERIOD_MS);
     }
     vTaskDelay(interval / portTICK_PERIOD_MS);
-    gpio_set_level(BLINK_GPIO, OFF);
+    gpio_set_level((gpio_num_t)CONFIG_MQTT_STATUS_LED_GPIO, LED_OFF);
     vTaskDelay(interval / portTICK_PERIOD_MS);
   }
-
 }
-
-// void updateHeatingState(bool heatEnabled)
-// {
-//   //FIXME update heat state switch/relay and publish it to mqtt
-// }
-
-
-// void mqtt_publish_sensor_data(void* pvParameters)
-// {
-//   const char * sensors_topic = CONFIG_MQTT_DEVICE_TYPE "/" CONFIG_MQTT_CLIENT_ID "/evt/sensors";
-//   esp_mqtt_client_handle_t client = (esp_mqtt_client_handle_t) pvParameters;
-//   ESP_LOGI(TAG, "starting mqtt_publish_sensor_data");
-//   int msg_id;
-
-//   int targetWaterTemp=30*10; //30 degrees
-//   int targetTemperatureSensibility=5; //0.5 degrees
-
-//   while(1) {
-//     ESP_LOGI(TAG, "waiting DHT22 | DS in mqtt_publish_sensor_data");
-//     // xEventGroupWaitBits(sensors_event_group, DHT22 | DS, true, true, portMAX_DELAY);
-
-//     if (heatEnabled==true && wtemperature > targetWaterTemp + targetTemperatureSensibility)
-//       {
-//         heatEnabled=false;
-//         updateHeatingState(heatEnabled);
-//       }
-
-
-//     if (heatEnabled==false && wtemperature < targetWaterTemp - targetTemperatureSensibility)
-//       {
-//         heatEnabled=true;
-//         updateHeatingState(heatEnabled);
-//       }
-
-//     ESP_LOGI(TAG, "waiting READY_FOR_REQUEST in mqtt_publish_sensor_data");
-//     // xEventGroupWaitBits(mqtt_event_group, READY_FOR_REQUEST, true, true, portMAX_DELAY);
-//     char data[256];
-//     memset(data,0,256);
-//     sprintf(data, "{\"counter\":%lld, \"humidity\":%.1f, \"temperature\":%.1f, \"wtemperature\":%.1f}",esp_timer_get_time(),humidity / 10., temperature / 10., wtemperature);
-//     msg_id = esp_mqtt_client_publish(client, sensors_topic, data,strlen(data), 0, 0);
-//     ESP_LOGI(TAG, "sent publish temp successful, msg_id=%d", msg_id);
-//     // xEventGroupSetBits(mqtt_event_group, READY_FOR_REQUEST);
-//   }
-// }
-
-
-
 
 extern "C" void app_main()
 {
-  connect_reason=boot;
   ESP_LOGI(TAG, "[APP] Startup..");
   ESP_LOGI(TAG, "[APP] Free memory: %d bytes", esp_get_free_heap_size());
   ESP_LOGI(TAG, "[APP] IDF version: %s", esp_get_idf_version());
@@ -151,17 +118,23 @@ extern "C" void app_main()
   esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
   esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
 
-  relays_init();
 
   mqtt_event_group = xEventGroupCreate();
   wifi_event_group = xEventGroupCreate();
 
   thermostatQueue = xQueueCreate(1, sizeof(struct ThermostatMessage) );
-  relayQueue = xQueueCreate(1, sizeof(struct RelayMessage) );
+#if CONFIG_MQTT_RELAYS_NB
+  relayQueue = xQueueCreate(32, sizeof(struct RelayMessage) );
+  relays_init();
+#endif //CONFIG_MQTT_RELAYS_NB
+
+
+#ifdef CONFIG_MQTT_OTA
   otaQueue = xQueueCreate(1, sizeof(struct OtaMessage) );
+#endif //CONFIG_MQTT_OTA
   mqttQueue = xQueueCreate(1, sizeof(void *) );
 
-  xTaskCreate(blink_task, "blink_task", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
+  xTaskCreate(blink_task, "blink_task", configMINIMAL_STACK_SIZE * 3, NULL, 3, NULL);
 
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -172,23 +145,48 @@ extern "C" void app_main()
   }
   ESP_ERROR_CHECK( err );
 
+  ESP_LOGI(TAG, "nvs_flash_init done");
+
   err=read_thermostat_nvs(targetTemperatureTAG, &targetTemperature);
+  ESP_ERROR_CHECK( err );
+
   err=read_thermostat_nvs(targetTemperatureSensibilityTAG, &targetTemperatureSensibility);
   ESP_ERROR_CHECK( err );
 
-  esp_mqtt_client_handle_t client = mqtt_init();
+  smartconfigQueue = xQueueCreate(1, sizeof(int) );
+  err=read_nvs_integer(smartconfigTAG, &smartconfigFlag);
+  ESP_ERROR_CHECK( err );
 
-  xTaskCreate(sensors_read, "sensors_read", configMINIMAL_STACK_SIZE * 5, (void *)client, 10, NULL);
+  xTaskCreate(smartconfig_cmd_task, "smartconfig_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)NULL, 5, NULL);
 
-  xTaskCreate(handle_relay_cmd_task, "handle_relay_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
-  xTaskCreate(handle_ota_update_task, "handle_ota_update_task", configMINIMAL_STACK_SIZE * 7, (void *)client, 5, NULL);
+  if (smartconfigFlag) {
+    ESP_ERROR_CHECK(write_nvs_integer(smartconfigTAG, ! smartconfigFlag));
+  } else {
+
+    esp_mqtt_client_handle_t client = mqtt_init();
+
+#ifdef CONFIG_MQTT_SENSOR
+    xTaskCreate(sensors_read, "sensors_read", configMINIMAL_STACK_SIZE * 3, (void *)client, 10, NULL);
+#endif //CONFIG_MQTT_SENSOR
+
+
+#if CONFIG_MQTT_RELAYS_NB
+    xTaskCreate(handle_relay_cmd_task, "handle_relay_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+#endif //CONFIG_MQTT_RELAYS_NB
+
+#if CONFIG_MQTT_SWITCHES_NB
+    gpio_switch_init(NULL);
+#endif //CONFIG_MQTT_SWITCHES_NB
+
+#ifdef CONFIG_MQTT_OTA
+   xTaskCreate(handle_ota_update_task, "handle_ota_update_task", configMINIMAL_STACK_SIZE * 7, (void *)client, 5, NULL);
+#endif //CONFIG_MQTT_OTA
+
   xTaskCreate(handle_thermostat_cmd_task, "handle_thermostat_cmd_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
-  xTaskCreate(handle_mqtt_sub_pub, "handle_mqtt_sub_pub", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+    xTaskCreate(handle_mqtt_sub_pub, "handle_mqtt_sub_pub", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
 
-  wifi_init();
+    wifi_init();
+    mqtt_start(client);
 
-  mqtt_start(client);
-
-
-  //xTaskCreate(tft_handler, "tft_handler", configMINIMAL_STACK_SIZE * 3, NULL, 7, NULL);
+  }
 }

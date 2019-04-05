@@ -1,8 +1,11 @@
 #ifndef APP_ESP32_H
 #define APP_ESP32_H
 
-#define ON 0
-#define OFF 1
+#define RELAY_ON 0
+#define RELAY_OFF 1
+
+#define LED_ON 0
+#define LED_OFF 1
 
 #define MQTT_TIMEOUT 30
 #define MQTT_FLAG_TIMEOUT (MQTT_TIMEOUT * 1000 / portTICK_PERIOD_MS)

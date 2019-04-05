@@ -30,6 +30,12 @@ config MQTT_SERVER
     help
         Mqtt server
 
+config MQTT_PORT
+    int "Mqtt port"
+    default 8883
+    help
+        Mqtt port
+
 config MQTT_CLIENT_ID
     string "Mqtt client id"
     default "mqtt_client_id"
@@ -42,31 +48,128 @@ config MQTT_DEVICE_TYPE
     help
         Mqtt device type(esp32/esp8266/rtc.)
 
-config RELAYS_NB
-    int "Number of relays"
-    default 2
+config MQTT_SENSOR
+    boolean "enable sensor support"
+    default n
     help
-        Number of relays
+        Enable sensor support
 
-config RELAYS_BASE
-    int "Base IO pin of relays"
+config MQTT_SENSOR_DHT22
+    boolean "enable DHT22 sensor"
+    default n
+    depends on MQTT_SENSOR
+    help
+        Enable temperature/humidity MQTT sensor readings
+
+config MQTT_SENSOR_DHT22_GPIO
+    int "DHT22 sensor gpio"
+    default 5
+    depends on MQTT_SENSOR_DHT22
+    help
+        Gpio port of dht22 sensor
+
+config MQTT_SENSOR_DS18X20
+    boolean "enable DS18X20 sensor"
+    default n
+    depends on MQTT_SENSOR
+    help
+        Enable temperature DS18X20 sensor readings
+
+config MQTT_SENSOR_DS18X20_GPIO
+    int "DS18X20 sensor gpio"
+    default 5
+    depends on MQTT_SENSOR_DS18X20
+    help
+        Gpio port of DS18X20 sensor
+
+config MQTT_SENSOR_BME280
+    boolean "enable BME280 sensor"
+    default n
+    depends on MQTT_SENSOR
+    help
+        Enable temperature/humidity/pressure MQTT sensor readings
+
+config MQTT_SENSOR_BME280_SDA_GPIO
+    int "BME280 sensor SDA GPIO"
+    default 14
+    depends on MQTT_SENSOR_BME280
+    help
+        SDA Gpio port of dht22 sensor
+
+config MQTT_SENSOR_BME280_SCL_GPIO
+    int "BME280 sensor SCL GPIO"
+    default 2
+    depends on MQTT_SENSOR_BME280
+    help
+        SCL Gpio port of dht22 sensor
+
+config MQTT_RELAYS_NB
+    int "number of relays to control"
+    default 0
+    range 0 4
+    help
+        number of relays to control
+
+config MQTT_RELAYS_NB0_GPIO
+    int "relay 0 gpio port"
+    depends on MQTT_RELAYS_NB > 0
+    default 4
+    help
+        relay 0 gpio port
+
+config MQTT_RELAYS_NB1_GPIO
+    int "relay 1 gpio port"
+    depends on MQTT_RELAYS_NB > 1
+    default 14
+    help
+        relay 1 gpio port
+
+config MQTT_RELAYS_NB2_GPIO
+    int "relay 2 gpio port"
+    depends on MQTT_RELAYS_NB > 2
+    default 12
+    help
+        relay 2 gpio port
+
+config MQTT_RELAYS_NB3_GPIO
+    int "relay 3 gpio port"
+    depends on MQTT_RELAYS_NB > 3
+    default 13
+    help
+        relay 3 gpio port
+
+config MQTT_STATUS_LED_GPIO
+    int "internal LED status GPIO"
     default 16
     help
-        Base IO pin of relays
+        internal LED status GPIO
 
 
-config DHT_GPIO
-    int "Base IO pin of DHT sensor"
-    default 22
+config MQTT_SWITCHES_NB
+    int "number of switches to control"
+    default 0
+    range 0 2
     help
-        Base IO pin of DHT sensor
+        number of relays to control
 
-
-config DS18X20_GPIO
-    int "Base IO pin of DS18X20 sonsor(s)"
-    default 21
+config MQTT_SWITCHES_NB0_GPIO
+    int "switch 0 gpio port"
+    depends on MQTT_SWITCHES_NB > 0
+    default 0
     help
-        Base IO pin of DS18X20 sonsor(s)
+        switch 0 gpio port
 
+config MQTT_SWITCHES_NB1_GPIO
+    int "switch 1 gpio port"
+    depends on MQTT_SWITCHES_NB > 1
+    default 9
+    help
+        switch 1 gpio port
+
+config MQTT_OTA
+    boolean "enable OTA support"
+    default y
+    help
+        Enable OTA support
 
 endmenu
