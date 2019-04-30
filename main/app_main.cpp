@@ -45,6 +45,13 @@ extern "C" {
 QueueHandle_t otaQueue;
 #endif //CONFIG_MQTT_OTA
 
+#ifdef CONFIG_MQTT_OPS
+extern "C" {
+#include "app_ops.h"
+}
+#endif // CONFIG_MQTT_OPS
+
+
 extern "C" {
 #include "app_smart_config.h"
 }
@@ -187,6 +194,9 @@ extern "C" void app_main()
 
     wifi_init();
     mqtt_start(client);
+#ifdef CONFIG_MQTT_OPS
+    xTaskCreate(ops_pub_task, "ops_pub_task", configMINIMAL_STACK_SIZE * 3, (void *)client, 5, NULL);
+#endif // CONFIG_MQTT_OPS
 
   }
 }
